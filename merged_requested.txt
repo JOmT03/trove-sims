@@ -1,0 +1,1268 @@
+// ----- FILE: routes/web.php -----
+<?php
+
+use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\DeliveryController;
+use App\Http\Controllers\InventoryController;
+use App\Http\Controllers\OrderController;
+use App\Http\Controllers\ProfileController;
+use App\Http\Controllers\SupplierController;
+use Illuminate\Support\Facades\Route;
+
+Route::get('/', function () {
+    return view('welcome');
+})->name('welcome');
+
+Route::middleware('auth')->group(function () {
+
+    Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
+
+    Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
+    Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
+    Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
+
+    // ── SUPPLIERS ──
+    Route::get('/suppliers',                    [SupplierController::class, 'index'])->name('suppliers.index');
+    Route::get('/suppliers/create',             [SupplierController::class, 'create'])->name('suppliers.create')->middleware('admin');
+    Route::post('/suppliers',                   [SupplierController::class, 'store'])->name('suppliers.store')->middleware('admin');
+    Route::get('/suppliers/{supplier}',         [SupplierController::class, 'show'])->name('suppliers.show');
+    Route::get('/suppliers/{supplier}/edit',    [SupplierController::class, 'edit'])->name('suppliers.edit')->middleware('admin');
+    Route::put('/suppliers/{supplier}',         [SupplierController::class, 'update'])->name('suppliers.update')->middleware('admin');
+    Route::delete('/suppliers/{supplier}',      [SupplierController::class, 'destroy'])->name('suppliers.destroy')->middleware('admin');
+
+    // ── ORDERS ──
+    Route::get('/orders',                       [OrderController::class, 'index'])->name('orders.index');
+    Route::get('/orders/create',                [OrderController::class, 'create'])->name('orders.create')->middleware('admin');
+    Route::post('/orders',                      [OrderController::class, 'store'])->name('orders.store')->middleware('admin');
+    Route::get('/orders/{order}',               [OrderController::class, 'show'])->name('orders.show');
+    Route::patch('/orders/{order}/status',      [OrderController::class, 'updateStatus'])->name('orders.status')->middleware('admin');
+    Route::delete('/orders/{order}',            [OrderController::class, 'destroy'])->name('orders.destroy')->middleware('admin');
+
+    // ── DELIVERIES ──
+    Route::get('/deliveries',                   [DeliveryController::class, 'index'])->name('deliveries.index');
+    Route::get('/deliveries/create',            [DeliveryController::class, 'create'])->name('deliveries.create')->middleware('admin');
+    Route::post('/deliveries',                  [DeliveryController::class, 'store'])->name('deliveries.store')->middleware('admin');
+    Route::get('/deliveries/{delivery}',        [DeliveryController::class, 'show'])->name('deliveries.show');
+
+    // ── AJAX: get order items as JSON (used by deliveries/create page) ──
+    Route::get('/api/orders/{order}/items',     [OrderController::class, 'getItems'])->name('orders.items');
+
+    // ── INVENTORY ──
+    Route::get('/inventory',                    [InventoryController::class, 'index'])->name('inventory.index');
+    Route::get('/inventory/create',             [InventoryController::class, 'create'])->name('inventory.create')->middleware('admin');
+    Route::post('/inventory',                   [InventoryController::class, 'store'])->name('inventory.store')->middleware('admin');
+    Route::get('/inventory/{inventory}',        [InventoryController::class, 'show'])->name('inventory.show');
+    Route::patch('/inventory/{inventory}/adjust', [InventoryController::class, 'adjust'])->name('inventory.adjust')->middleware('admin');
+});
+
+require __DIR__ . '/auth.php';
+
+// ----- FILE: app/Http/Controllers/OrderController.php -----
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\Order;
+use App\Models\OrderItem;
+use App\Models\Supplier;
+use Illuminate\Http\Request;
+
+class OrderController extends Controller
+{
+    public function index()
+    {
+        $orders = Order::with('supplier', 'items')->latest()->get();
+        return view('orders.index', compact('orders'));
+    }
+
+    public function create()
+    {
+        $suppliers  = Supplier::orderBy('name')->get();
+        $categories = \App\Models\Supplier::CATEGORIES;
+        $units      = OrderItem::UNITS;
+        return view('orders.create', compact('suppliers', 'categories', 'units'));
+    }
+
+    public function store(Request $request)
+    {
+        $request->validate([
+            'supplier_id'            => 'required|exists:suppliers,id',
+            'expected_delivery_date' => 'nullable|date',
+            'notes'                  => 'nullable|string',
+            'items'                  => 'required|array|min:1',
+            'items.*.item_name'      => 'required|string',
+            'items.*.category'       => 'required|string',
+            'items.*.unit'           => 'required|string',
+            'items.*.quantity'       => 'required|numeric|min:1',
+            'items.*.unit_price'     => 'required|numeric|min:0',
+        ]);
+
+        $order = Order::create([
+            'supplier_id'            => $request->supplier_id,
+            'user_id'                => auth()->id(),
+            'status'                 => 'pending',
+            'expected_delivery_date' => $request->expected_delivery_date,
+            'notes'                  => $request->notes,
+        ]);
+
+        foreach ($request->items as $item) {
+            $order->items()->create($item);
+        }
+
+        return redirect()->route('orders.show', $order)
+            ->with('success', 'Order ' . $order->order_number . ' created successfully.');
+    }
+
+    public function show(Order $order)
+    {
+        $order->load('supplier', 'items', 'user');
+        $statuses = Order::STATUSES;
+        return view('orders.show', compact('order', 'statuses'));
+    }
+
+    /**
+     * AJAX endpoint — returns order items as JSON for the delivery create page
+     */
+    public function getItems(Order $order)
+    {
+        $order->load('items', 'supplier');
+        return response()->json([
+            'order' => [
+                'id'           => $order->id,
+                'order_number' => $order->order_number,
+                'supplier'     => $order->supplier->name ?? '',
+            ],
+            'items' => $order->items->map(fn($item) => [
+                'id'          => $item->id,
+                'name'        => $item->item_name,
+                'category'   => $item->category,
+                'unit'        => $item->unit,
+                'quantity'    => $item->quantity,
+                'unit_price'  => $item->unit_price,
+            ]),
+        ]);
+    }
+
+    /**
+     * Admin updates order status (pending → confirmed → shipped → delivered)
+     */
+    public function updateStatus(Request $request, Order $order)
+    {
+        $request->validate([
+            'status' => 'required|in:' . implode(',', array_keys(Order::STATUSES)),
+        ]);
+
+        $order->update(['status' => $request->status]);
+
+        return back()->with('success', 'Order status updated to ' . ucfirst($request->status) . '.');
+    }
+
+    public function destroy(Order $order)
+    {
+        if ($order->status !== 'pending') {
+            return back()->with('error', 'Only pending orders can be cancelled.');
+        }
+        $order->items()->delete();
+        $order->delete();
+        return redirect()->route('orders.index')
+            ->with('success', 'Order cancelled and removed.');
+    }
+}
+
+// ----- FILE: app/Http/Controllers/DeliveryController.php -----
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\Delivery;
+use App\Models\DeliveryItem;
+use App\Models\Inventory;
+use App\Models\Order;
+use Illuminate\Http\Request;
+
+class DeliveryController extends Controller
+{
+    public function index()
+    {
+        $deliveries = Delivery::with('order.supplier')->latest()->get();
+        return view('deliveries.index', compact('deliveries'));
+    }
+
+    public function create(Request $request)
+    {
+        // Show confirmed, shipped, OR delivered orders
+        // (delivered is included so you can still record if the status jumped ahead)
+        $orders = Order::with('supplier', 'items')
+            ->whereIn('status', ['confirmed', 'shipped', 'delivered'])
+            ->latest()
+            ->get();
+
+        $selectedOrder = null;
+        if ($request->order_id) {
+            $selectedOrder = Order::with('supplier', 'items')->find($request->order_id);
+        }
+
+        return view('deliveries.create', compact('orders', 'selectedOrder'));
+    }
+
+    public function store(Request $request)
+    {
+        $request->validate([
+            'order_id'                   => 'required|exists:orders,id',
+            'delivered_at'               => 'required|date',
+            'received_by'                => 'required|string|max:255',
+            'notes'                      => 'nullable|string',
+            'items'                      => 'required|array|min:1',
+            'items.*.item_name'          => 'required|string',
+            'items.*.category'           => 'required|string',
+            'items.*.unit'               => 'required|string',
+            'items.*.quantity_ordered'   => 'required|numeric|min:0',
+            'items.*.quantity_delivered' => 'required|numeric|min:0',
+            'items.*.quantity_damaged'   => 'nullable|numeric|min:0',
+            'items.*.condition'          => 'required|in:good,partial_damage,all_damaged',
+            'items.*.damage_notes'       => 'nullable|string',
+        ]);
+
+        $count          = Delivery::count() + 1;
+        $deliveryNumber = 'DEL-' . now()->year . '-' . str_pad($count, 4, '0', STR_PAD_LEFT);
+
+        $order = Order::findOrFail($request->order_id);
+
+        $delivery = Delivery::create([
+            'delivery_number' => $deliveryNumber,
+            'order_id'        => $request->order_id,
+            'supplier_id'     => $order->supplier_id,
+            'delivered_at'    => $request->delivered_at,
+            'received_by'     => $request->received_by,
+            'notes'           => $request->notes,
+            'status'          => 'received',
+        ]);
+
+        foreach ($request->items as $item) {
+            $delivery->items()->create([
+                'order_item_id'      => $item['order_item_id'],
+                'item_name'          => $item['item_name'],
+                'category'           => $item['category'],
+                'unit'               => $item['unit'],
+                'quantity_ordered'   => $item['quantity_ordered'],
+                'quantity_delivered' => $item['quantity_delivered'],
+                'quantity_damaged'   => $item['quantity_damaged'] ?? 0,
+                'condition'          => $item['condition'],
+                'damage_notes'       => $item['damage_notes'] ?? null,
+            ]);
+
+            // Update or create inventory record
+            $inv = Inventory::firstOrCreate(
+                [
+                    'item_name' => $item['item_name'],
+                    'category'  => $item['category'],
+                ],
+                [
+                    'unit'             => $item['unit'],
+                    'quantity_on_hand' => 0,
+                    'quantity_damaged' => 0,
+                    'minimum_stock'    => 0,
+                ]
+            );
+            $inv->increment('quantity_on_hand', $item['quantity_delivered']);
+            if (!empty($item['quantity_damaged'])) {
+                $inv->increment('quantity_damaged', $item['quantity_damaged']);
+            }
+        }
+
+        // Mark order as delivered
+        Order::find($request->order_id)->update(['status' => 'delivered']);
+
+        return redirect()->route('deliveries.show', $delivery)
+            ->with('success', 'Delivery ' . $deliveryNumber . ' recorded and inventory updated.');
+    }
+
+    public function show(Delivery $delivery)
+    {
+        $delivery->load('order.supplier', 'items');
+        return view('deliveries.show', compact('delivery'));
+    }
+}
+
+// ----- FILE: app/Http/Controllers/InventoryController.php -----
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\Inventory;
+use App\Models\InventoryLog;
+use App\Models\Supplier;
+use Illuminate\Http\Request;
+
+class InventoryController extends Controller
+{
+    public function index()
+    {
+        $inventories = Inventory::with('supplier')->latest()->get();
+
+        return view('inventory.index', compact('inventories'));
+    }
+
+    public function create()
+    {
+        if (auth()->user()->role !== 'admin') {
+            abort(403, 'Admin access required.');
+        }
+
+        $suppliers = Supplier::orderBy('name')->get();
+
+        return view('inventory.create', compact('suppliers'));
+    }
+
+    public function store(Request $request)
+    {
+        if (auth()->user()->role !== 'admin') {
+            abort(403, 'Admin access required.');
+        }
+
+        $validated = $request->validate([
+            'item_name'         => 'required|string|max:255',
+            'category'          => 'required|string|max:255',
+            'unit'              => 'required|string|max:50',
+            'quantity_on_hand'  => 'required|numeric|min:0',
+            'quantity_damaged'  => 'nullable|numeric|min:0',
+            'minimum_stock'     => 'required|numeric|min:0',
+            'supplier_id'       => 'nullable|exists:suppliers,id',
+            'notes'             => 'nullable|string',
+        ]);
+
+        $inventory = Inventory::create([
+            'item_name'         => $validated['item_name'],
+            'category'          => $validated['category'],
+            'unit'              => $validated['unit'],
+            'quantity_on_hand'  => $validated['quantity_on_hand'],
+            'quantity_damaged'  => $validated['quantity_damaged'] ?? 0,
+            'minimum_stock'     => $validated['minimum_stock'],
+            'supplier_id'       => $validated['supplier_id'] ?? null,
+            'notes'             => $validated['notes'] ?? null,
+        ]);
+
+        InventoryLog::create([
+            'inventory_id' => $inventory->id,
+            'type'         => 'adjustment',
+            'quantity'     => $inventory->quantity_on_hand,
+            'reference'    => 'INITIAL-STOCK',
+            'notes'        => 'Initial inventory record created',
+            'user_id'      => auth()->id(),
+        ]);
+
+        return redirect()->route('inventory.index')
+                         ->with('success', 'Inventory created successfully.');
+    }
+
+    public function show(Inventory $inventory)
+    {
+        $inventory->load(['supplier', 'logs.user']);
+
+        return view('inventory.show', compact('inventory'));
+    }
+
+    public function adjust(Request $request, Inventory $inventory)
+    {
+        if (auth()->user()->role !== 'admin') {
+            abort(403, 'Admin access required.');
+        }
+
+        $validated = $request->validate([
+            'type'     => 'required|in:used,damaged,adjustment',
+            'quantity' => 'required|numeric|min:0.01',
+            'notes'    => 'nullable|string',
+        ]);
+
+        if ($validated['type'] === 'used') {
+            $inventory->decrement('quantity_on_hand', $validated['quantity']);
+        } elseif ($validated['type'] === 'damaged') {
+            $inventory->decrement('quantity_on_hand', $validated['quantity']);
+            $inventory->increment('quantity_damaged', $validated['quantity']);
+        } else {
+            $inventory->increment('quantity_on_hand', $validated['quantity']);
+        }
+
+        InventoryLog::create([
+            'inventory_id' => $inventory->id,
+            'type'         => $validated['type'],
+            'quantity'     => $validated['quantity'],
+            'notes'        => $validated['notes'] ?? null,
+            'user_id'      => auth()->id(),
+        ]);
+
+        return redirect()->route('inventory.show', $inventory)
+                         ->with('success', 'Inventory adjusted successfully.');
+    }
+}
+
+// ----- FILE: app/Models/Order.php -----
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+
+class Order extends Model
+{
+    protected $fillable = [
+        'order_number',
+        'supplier_id',
+        'user_id',
+        'status',
+        'expected_delivery_date',
+        'notes',
+        'total_amount',
+    ];
+
+    // ── THIS was missing — caused the "Undefined constant" error ──
+    public const STATUSES = [
+        'pending'   => ['label' => 'Pending',   'color' => 'bg-orange-100 text-orange-700'],
+        'confirmed' => ['label' => 'Confirmed', 'color' => 'bg-blue-100 text-blue-700'],
+        'shipped'   => ['label' => 'Shipped',   'color' => 'bg-purple-100 text-purple-700'],
+        'delivered' => ['label' => 'Delivered', 'color' => 'bg-green-100 text-green-700'],
+        'cancelled' => ['label' => 'Cancelled', 'color' => 'bg-red-100 text-red-700'],
+    ];
+
+    // Auto-generate order number before creating
+    protected static function booted(): void
+    {
+        static::creating(function ($order) {
+            if (empty($order->order_number)) {
+                $year  = now()->year;
+                $count = static::whereYear('created_at', $year)->count() + 1;
+                $order->order_number = 'ORD-' . $year . '-' . str_pad($count, 4, '0', STR_PAD_LEFT);
+            }
+        });
+    }
+
+    public function supplier() { return $this->belongsTo(Supplier::class); }
+    public function user()     { return $this->belongsTo(User::class); }
+    public function items()    { return $this->hasMany(OrderItem::class); }
+
+    // Total amount computed from items
+    public function getTotalAmountAttribute($value)
+    {
+        if ($value) return $value;
+        return $this->items->sum(fn($i) => $i->quantity * $i->unit_price);
+    }
+}
+
+// ----- FILE: app/Models/OrderItem.php -----
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
+
+class OrderItem extends Model
+{
+    use HasFactory;
+
+    protected $fillable = [
+        'order_id', 'item_name', 'category',
+        'unit', 'quantity', 'unit_price', 'notes',
+    ];
+
+    public const UNITS = ['bags', 'pcs', 'liters', 'gallons', 'meters', 'kg', 'tons', 'rolls', 'sheets', 'sets'];
+
+    public function order()         { return $this->belongsTo(Order::class); }
+    public function deliveryItems() { return $this->hasMany(DeliveryItem::class); }
+
+    public function totalDelivered(): float
+    {
+        return $this->deliveryItems->sum('quantity_delivered');
+    }
+}
+
+// ----- FILE: app/Models/Delivery.php -----
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
+
+class Delivery extends Model
+{
+    use HasFactory;
+
+    protected $fillable = [
+        'order_id', 'supplier_id', 'delivery_number',
+        'delivered_at', 'received_by', 'status', 'notes',
+    ];
+
+    protected $casts = [
+        'delivered_at' => 'date',
+    ];
+
+    public const STATUSES = [
+        'pending'  => ['label' => 'Pending',  'color' => 'bg-yellow-100 text-yellow-800'],
+        'partial'  => ['label' => 'Partial',  'color' => 'bg-orange-100 text-orange-800'],
+        'complete' => ['label' => 'Complete', 'color' => 'bg-green-100 text-green-800'],
+    ];
+
+    public function order()    { return $this->belongsTo(Order::class); }
+    public function supplier() { return $this->belongsTo(Supplier::class); }
+    public function items()    { return $this->hasMany(DeliveryItem::class); }
+
+    protected static function booted(): void
+    {
+        static::creating(function (Delivery $d) {
+            $d->delivery_number = 'DEL-' . date('Y') . '-' . str_pad(
+                static::whereYear('created_at', date('Y'))->count() + 1,
+                4, '0', STR_PAD_LEFT
+            );
+        });
+    }
+}
+
+// ----- FILE: app/Models/DeliveryItem.php -----
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
+
+class DeliveryItem extends Model
+{
+    use HasFactory;
+
+    protected $fillable = [
+        'delivery_id', 'order_item_id', 'item_name', 'category',
+        'unit', 'quantity_ordered', 'quantity_delivered',
+        'quantity_damaged', 'condition', 'damage_notes',
+    ];
+
+    public const CONDITIONS = [
+        'good'           => ['label' => 'Good',           'color' => 'bg-green-100 text-green-800'],
+        'partial_damage' => ['label' => 'Partial Damage', 'color' => 'bg-orange-100 text-orange-800'],
+        'all_damaged'    => ['label' => 'All Damaged',    'color' => 'bg-red-100 text-red-800'],
+    ];
+
+    public function delivery()  { return $this->belongsTo(Delivery::class); }
+    public function orderItem() { return $this->belongsTo(OrderItem::class); }
+}
+
+// ----- FILE: app/Models/Inventory.php -----
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+
+class Inventory extends Model
+{
+    protected $table = 'inventory';
+
+    protected $fillable = [
+        'item_name',
+        'category',
+        'unit',
+        'quantity_on_hand',
+        'quantity_damaged',
+        'minimum_stock',
+        'supplier_id',
+        'notes',
+    ];
+
+    public function supplier()
+    {
+        return $this->belongsTo(Supplier::class);
+    }
+
+    public function logs()
+    {
+        return $this->hasMany(InventoryLog::class);
+    }
+
+    public function usableQuantity()
+    {
+        return $this->quantity_on_hand - $this->quantity_damaged;
+    }
+
+    public function isLowStock()
+    {
+        return $this->usableQuantity() <= $this->minimum_stock;
+    }
+}
+
+// ----- FILE: app/Models/InventoryLog.php -----
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
+
+class InventoryLog extends Model
+{
+    use HasFactory;
+
+    // ← FIX: tell Laravel the table is 'inventory_logs' not 'inventory'
+    protected $table = 'inventory_logs';
+
+    protected $fillable = [
+        'item_name', 'category', 'unit',
+        'quantity_on_hand', 'quantity_damaged',
+        'minimum_stock', 'supplier_id', 'notes',
+    ];
+
+    public function supplier() { return $this->belongsTo(Supplier::class); }
+    public function logs()     { return $this->hasMany(InventoryLog::class); }
+
+    public function isLowStock(): bool
+    {
+        return $this->quantity_on_hand <= $this->minimum_stock;
+    }
+
+    public function usableQuantity(): float
+    {
+        return max(0, $this->quantity_on_hand - $this->quantity_damaged);
+    }
+}
+
+// ----- FILE: database/migrations/2026_04_22_200136_create_orders_table.php -----
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    public function up(): void
+    {
+        Schema::create('orders', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('supplier_id')->constrained()->onDelete('cascade');
+            $table->foreignId('user_id')->constrained()->onDelete('cascade');
+            $table->string('order_number')->unique();
+            $table->string('status')->default('pending');
+            $table->date('expected_delivery_date')->nullable();
+            $table->text('notes')->nullable();
+            $table->timestamps();
+        });
+
+        Schema::create('order_items', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('order_id')->constrained()->onDelete('cascade');
+            $table->string('item_name');
+            $table->string('category');
+            $table->string('unit');
+            $table->decimal('quantity', 10, 2);
+            $table->decimal('unit_price', 10, 2)->nullable();
+            $table->text('notes')->nullable();
+            $table->timestamps();
+        });
+    }
+
+    public function down(): void
+    {
+        Schema::dropIfExists('order_items');
+        Schema::dropIfExists('orders');
+    }
+};
+
+// ----- FILE: database/migrations/2026_04_22_200209_create_deliveries_table.php -----
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    public function up(): void
+    {
+        Schema::create('deliveries', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('order_id')->constrained()->onDelete('cascade');
+            $table->foreignId('supplier_id')->constrained()->onDelete('cascade');
+            $table->string('delivery_number')->unique();
+            $table->date('delivered_at')->nullable();
+            $table->string('received_by')->nullable();
+            $table->string('status')->default('pending');
+            $table->text('notes')->nullable();
+            $table->timestamps();
+        });
+
+        Schema::create('delivery_items', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('delivery_id')->constrained()->onDelete('cascade');
+            $table->foreignId('order_item_id')->constrained()->onDelete('cascade');
+            $table->string('item_name');
+            $table->string('category');
+            $table->string('unit');
+            $table->decimal('quantity_ordered', 10, 2);
+            $table->decimal('quantity_delivered', 10, 2)->default(0);
+            $table->decimal('quantity_damaged', 10, 2)->default(0);
+            $table->string('condition')->default('good');
+            $table->text('damage_notes')->nullable();
+            $table->timestamps();
+        });
+    }
+
+    public function down(): void
+    {
+        Schema::dropIfExists('delivery_items');
+        Schema::dropIfExists('deliveries');
+    }
+};
+
+// ----- FILE: database/migrations/2026_04_22_200226_create_inventory_table.php -----
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    public function up(): void
+    {
+        Schema::create('inventory', function (Blueprint $table) {
+            $table->id();
+            $table->string('item_name');
+            $table->string('category');
+            $table->string('unit');
+            $table->decimal('quantity_on_hand', 10, 2)->default(0);
+            $table->decimal('quantity_damaged', 10, 2)->default(0);
+            $table->decimal('minimum_stock', 10, 2)->default(0);
+            $table->foreignId('supplier_id')->nullable()->constrained()->nullOnDelete();
+            $table->text('notes')->nullable();
+            $table->timestamps();
+        });
+
+        Schema::create('inventory_logs', function (Blueprint $table) {
+            $table->id();
+
+            // ← FIX: use explicit reference because table is 'inventory'
+            //         not 'inventories' (Laravel's default guess)
+            $table->unsignedBigInteger('inventory_id');
+            $table->foreign('inventory_id')
+                  ->references('id')->on('inventory')
+                  ->onDelete('cascade');
+
+            $table->unsignedBigInteger('delivery_id')->nullable();
+            $table->foreign('delivery_id')
+                  ->references('id')->on('deliveries')
+                  ->onDelete('set null');
+
+            $table->string('type');
+            $table->decimal('quantity', 10, 2);
+            $table->string('reference')->nullable();
+            $table->text('notes')->nullable();
+            $table->foreignId('user_id')->constrained()->onDelete('cascade');
+            $table->timestamps();
+        });
+    }
+
+    public function down(): void
+    {
+        Schema::dropIfExists('inventory_logs');
+        Schema::dropIfExists('inventory');
+    }
+};
+
+// ----- FILE: resources/views/orders/show.blade.php -----
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Order {{ $order->order_number }} — ConSupMan</title>
+    <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+    <style>
+        *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+        :root{--navy:#0f1f3d;--navy-mid:#1a2f52;--gold:#e8a020;--gold-light:#f5b942;--sidebar-w:240px;--bg:#f4f6fa;--white:#fff;--text:#1a1a2e;--muted:#7a8499;--border:#e2e8f0;--green:#22c55e;--red:#ef4444;--orange:#f97316}
+        body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);display:flex;min-height:100vh}
+        svg{display:block}
+        /* Sidebar */
+        .sidebar{width:var(--sidebar-w);background:var(--navy);display:flex;flex-direction:column;position:fixed;top:0;left:0;bottom:0;z-index:100}
+        .sidebar-logo{padding:24px 20px;border-bottom:1px solid rgba(255,255,255,.08)}
+        .logo-mark{display:flex;align-items:center;gap:10px}
+        .logo-icon{width:38px;height:38px;background:var(--gold);border-radius:10px;display:flex;align-items:center;justify-content:center;font-family:'Syne',sans-serif;font-weight:800;font-size:14px;color:var(--navy)}
+        .logo-text .brand{font-family:'Syne',sans-serif;font-weight:700;font-size:16px;color:var(--white)}
+        .logo-text .sub{font-size:10px;color:rgba(255,255,255,.4);letter-spacing:.5px}
+        .sidebar-nav{flex:1;padding:16px 0}
+        .nav-label{font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:rgba(255,255,255,.3);padding:16px 20px 8px}
+        .nav-item{display:flex;align-items:center;gap:12px;padding:11px 20px;color:rgba(255,255,255,.6);text-decoration:none;font-size:14px;transition:all .2s;border-left:3px solid transparent}
+        .nav-item:hover{background:rgba(255,255,255,.06);color:var(--white)}
+        .nav-item.active{background:rgba(232,160,32,.12);color:var(--gold);border-left-color:var(--gold)}
+        .nav-icon{width:18px;height:18px;flex-shrink:0}
+        .sidebar-user{padding:16px 20px;border-top:1px solid rgba(255,255,255,.08);display:flex;align-items:center;gap:10px}
+        .user-avatar{width:34px;height:34px;background:var(--gold);border-radius:50%;display:flex;align-items:center;justify-content:center;font-family:'Syne',sans-serif;font-weight:700;font-size:13px;color:var(--navy);flex-shrink:0}
+        .user-info .name{font-size:13px;font-weight:500;color:var(--white)}
+        .user-info .role{font-size:11px;color:rgba(255,255,255,.4)}
+        .signout-btn{margin-left:auto;background:none;border:none;color:rgba(255,255,255,.3);cursor:pointer;padding:4px;transition:color .2s}
+        .signout-btn:hover{color:var(--red)}
+        /* Main */
+        .main{margin-left:var(--sidebar-w);flex:1;display:flex;flex-direction:column}
+        .topbar{background:var(--white);border-bottom:1px solid var(--border);padding:0 32px;height:60px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:50}
+        .page-title{font-family:'Syne',sans-serif;font-weight:700;font-size:20px}
+        .page-subtitle{font-size:13px;color:var(--muted);margin-top:1px}
+        .content{padding:28px 32px;max-width:900px}
+        .btn-back{display:inline-flex;align-items:center;gap:6px;color:var(--muted);font-size:13px;text-decoration:none;margin-bottom:20px;transition:color .2s}
+        .btn-back:hover{color:var(--navy)}
+        .card{background:var(--white);border-radius:14px;border:1px solid var(--border);margin-bottom:20px}
+        .card-header{padding:20px 24px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+        .card-title{font-family:'Syne',sans-serif;font-weight:700;font-size:15px}
+        .card-body{padding:24px}
+        .info-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+        .info-item .label{font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;margin-bottom:4px}
+        .info-item .val{font-size:14px;font-weight:500;font-variant-numeric:tabular-nums}
+
+        /* Status badge */
+        .status-badge{display:inline-flex;align-items:center;gap:5px;padding:5px 14px;border-radius:20px;font-size:12px;font-weight:700}
+        .status-badge.pending{background:rgba(249,115,22,.12);color:#c2410c}
+        .status-badge.confirmed{background:rgba(59,130,246,.12);color:#1d4ed8}
+        .status-badge.shipped{background:rgba(139,92,246,.12);color:#7c3aed}
+        .status-badge.delivered{background:rgba(34,197,94,.12);color:#15803d}
+        .status-badge.cancelled{background:rgba(239,68,68,.1);color:#dc2626}
+
+        /* Status flow */
+        .status-flow{display:flex;align-items:center;gap:0;margin-bottom:24px}
+        .step{display:flex;flex-direction:column;align-items:center;flex:1;position:relative}
+        .step::after{content:'';position:absolute;top:16px;left:50%;right:-50%;height:2px;background:var(--border);z-index:0}
+        .step:last-child::after{display:none}
+        .step-dot{width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;border:2px solid var(--border);background:var(--white);z-index:1;position:relative}
+        .step-dot.done{background:var(--green);border-color:var(--green);color:var(--white)}
+        .step-dot.current{background:var(--gold);border-color:var(--gold);color:var(--navy)}
+        .step-dot.future{background:var(--white);border-color:var(--border);color:var(--muted)}
+        .step-label{font-size:11px;color:var(--muted);margin-top:6px;font-weight:500}
+        .step-label.done{color:var(--green)}
+        .step-label.current{color:var(--gold);font-weight:700}
+
+        /* Action buttons */
+        .btn-primary{background:var(--gold);color:var(--navy);font-family:'Syne',sans-serif;font-weight:700;font-size:13px;padding:9px 18px;border-radius:10px;border:none;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:6px;transition:background .2s}
+        .btn-primary:hover{background:var(--gold-light)}
+        .btn-secondary{background:var(--white);color:var(--text);font-size:13px;font-weight:500;padding:9px 18px;border-radius:10px;border:1px solid var(--border);cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:6px;transition:all .2s}
+        .btn-secondary:hover{background:var(--navy);color:var(--white);border-color:var(--navy)}
+        .btn-danger{background:rgba(239,68,68,.1);color:var(--red);font-size:13px;font-weight:500;padding:9px 18px;border-radius:10px;border:none;cursor:pointer;transition:all .2s}
+        .btn-danger:hover{background:var(--red);color:var(--white)}
+
+        /* Items table */
+        .items-table{width:100%;border-collapse:collapse}
+        .items-table th{text-align:left;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;padding:12px 16px;background:#fafafa;border-bottom:1px solid var(--border)}
+        .items-table td{padding:14px 16px;font-size:14px;border-bottom:1px solid var(--border);vertical-align:middle}
+        .items-table tr:last-child td{border-bottom:none}
+        .total-row td{font-family:'Syne',sans-serif;font-weight:700;background:#fafafa}
+
+        .alert{padding:12px 20px;border-radius:10px;margin-bottom:16px;font-size:14px}
+        .alert-success{background:rgba(34,197,94,.1);border:1px solid rgba(34,197,94,.3);color:#15803d}
+        .alert-error{background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);color:#dc2626}
+
+        .admin-actions{background:rgba(15,31,61,.03);border:1px solid var(--border);border-radius:12px;padding:20px 24px}
+        .admin-actions h4{font-family:'Syne',sans-serif;font-weight:700;font-size:13px;margin-bottom:12px;color:var(--navy)}
+        .status-btns{display:flex;gap:8px;flex-wrap:wrap}
+    </style>
+</head>
+<body>
+<aside class="sidebar">
+    <div class="sidebar-logo">
+        <div class="logo-mark">
+            <div class="logo-icon">CS</div>
+            <div class="logo-text">
+                <div class="brand">Con<span style="color:var(--gold)">Sup</span>Man</div>
+                <div class="sub">Construction Supplier Mgmt</div>
+            </div>
+        </div>
+    </div>
+    <nav class="sidebar-nav">
+        <div class="nav-label">Main</div>
+        <a href="{{ route('dashboard') }}" class="nav-item"><svg class="nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>Dashboard</a>
+        <div class="nav-label">Procurement</div>
+        <a href="{{ route('suppliers.index') }}" class="nav-item"><svg class="nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0"/></svg>Suppliers</a>
+        <a href="{{ route('orders.index') }}" class="nav-item active"><svg class="nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z"/></svg>Orders</a>
+        <a href="{{ route('deliveries.index') }}" class="nav-item"><svg class="nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"/></svg>Deliveries</a>
+        <a href="{{ route('inventory.index') }}" class="nav-item"><svg class="nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>Inventory</a>
+    </nav>
+    <div class="sidebar-user">
+        <div class="user-avatar">{{ substr(auth()->user()->name,0,1) }}</div>
+        <div class="user-info">
+            <div class="name">{{ auth()->user()->name }}</div>
+            <div class="role">{{ ucfirst(auth()->user()->role) }}</div>
+        </div>
+        <form method="POST" action="{{ route('logout') }}" style="margin-left:auto">@csrf
+            <button type="submit" class="signout-btn"><svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg></button>
+        </form>
+    </div>
+</aside>
+
+<div class="main">
+    <header class="topbar">
+        <div>
+            <div class="page-title">Order {{ $order->order_number }}</div>
+            <div class="page-subtitle">Order details and status tracking</div>
+        </div>
+        <span class="status-badge {{ $order->status }}">{{ ucfirst($order->status) }}</span>
+    </header>
+
+    <div class="content">
+        @if(session('success'))<div class="alert alert-success">✓ {{ session('success') }}</div>@endif
+        @if(session('error'))<div class="alert alert-error">✗ {{ session('error') }}</div>@endif
+
+        <a href="{{ route('orders.index') }}" class="btn-back">
+            <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/></svg>
+            Back to Orders
+        </a>
+
+        <!-- Status Progress Bar -->
+        @php
+            $steps = ['pending','confirmed','shipped','delivered'];
+            $currentIdx = array_search($order->status, $steps);
+            if($order->status === 'cancelled') $currentIdx = -1;
+        @endphp
+        @if($order->status !== 'cancelled')
+        <div class="card" style="margin-bottom:20px">
+            <div class="card-body" style="padding:24px 32px">
+                <div style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;margin-bottom:16px">Order Progress</div>
+                <div class="status-flow">
+                    @foreach($steps as $i => $step)
+                    <div class="step">
+                        <div class="step-dot {{ $i < $currentIdx ? 'done' : ($i === $currentIdx ? 'current' : 'future') }}">
+                            @if($i < $currentIdx) ✓ @else {{ $i + 1 }} @endif
+                        </div>
+                        <div class="step-label {{ $i < $currentIdx ? 'done' : ($i === $currentIdx ? 'current' : '') }}">
+                            {{ ucfirst($step) }}
+                        </div>
+                    </div>
+                    @endforeach
+                </div>
+            </div>
+        </div>
+        @endif
+
+        <!-- Admin: Update Status -->
+        @if(auth()->user()->role === 'admin' && $order->status !== 'delivered' && $order->status !== 'cancelled')
+        <div class="admin-actions" style="margin-bottom:20px">
+            <h4>🔧 Admin: Update Order Status</h4>
+            <div class="status-btns">
+                @if($order->status === 'pending')
+                    <form method="POST" action="{{ route('orders.status', $order) }}">
+                        @csrf @method('PATCH')
+                        <input type="hidden" name="status" value="confirmed">
+                        <button type="submit" class="btn-primary">✓ Confirm Order</button>
+                    </form>
+                    <form method="POST" action="{{ route('orders.destroy', $order) }}" onsubmit="return confirm('Cancel this order?')">
+                        @csrf @method('DELETE')
+                        <button type="submit" class="btn-danger">✕ Cancel Order</button>
+                    </form>
+                @elseif($order->status === 'confirmed')
+                    <form method="POST" action="{{ route('orders.status', $order) }}">
+                        @csrf @method('PATCH')
+                        <input type="hidden" name="status" value="shipped">
+                        <button type="submit" class="btn-primary">🚚 Mark as Shipped</button>
+                    </form>
+                @elseif($order->status === 'shipped')
+                    <form method="POST" action="{{ route('orders.status', $order) }}">
+                        @csrf @method('PATCH')
+                        <input type="hidden" name="status" value="delivered">
+                        <button type="submit" class="btn-primary">📦 Mark as Delivered</button>
+                    </form>
+                    <a href="{{ route('deliveries.create') }}?order_id={{ $order->id }}" class="btn-secondary">+ Record Delivery</a>
+                @endif
+            </div>
+            <p style="font-size:12px;color:var(--muted);margin-top:10px">
+                @if($order->status==='pending') Confirm this order to notify the supplier it's approved.
+                @elseif($order->status==='confirmed') Mark as Shipped once the supplier dispatches the items.
+                @elseif($order->status==='shipped') Mark as Delivered and record the delivery details.
+                @endif
+            </p>
+        </div>
+        @endif
+
+        <!-- Order Info -->
+        <div class="card">
+            <div class="card-header">
+                <div class="card-title">Order Information</div>
+                <div style="font-size:13px;color:var(--muted)">{{ $order->created_at->format('M d, Y h:i A') }}</div>
+            </div>
+            <div class="card-body">
+                <div class="info-grid">
+                    <div class="info-item">
+                        <div class="label">Order Number</div>
+                        <div class="val" style="font-family:'Syne',sans-serif;font-weight:700">{{ $order->order_number }}</div>
+                    </div>
+                    <div class="info-item">
+                        <div class="label">Supplier</div>
+                        <div class="val">{{ $order->supplier->name ?? 'N/A' }}</div>
+                    </div>
+                    <div class="info-item">
+                        <div class="label">Category</div>
+                        <div class="val">{{ $order->supplier->category ?? '—' }}</div>
+                    </div>
+                    <div class="info-item">
+                        <div class="label">Placed By</div>
+                        <div class="val">{{ $order->user->name ?? auth()->user()->name }}</div>
+                    </div>
+                    <div class="info-item">
+                        <div class="label">Expected Delivery</div>
+                        <div class="val">{{ $order->expected_delivery_date ? \Carbon\Carbon::parse($order->expected_delivery_date)->format('M d, Y') : '—' }}</div>
+                    </div>
+                    <div class="info-item">
+                        <div class="label">Status</div>
+                        <div class="val"><span class="status-badge {{ $order->status }}">{{ ucfirst($order->status) }}</span></div>
+                    </div>
+                    @if($order->notes)
+                    <div class="info-item" style="grid-column:1/-1">
+                        <div class="label">Notes</div>
+                        <div class="val">{{ $order->notes }}</div>
+                    </div>
+                    @endif
+                </div>
+            </div>
+        </div>
+
+        <!-- Order Items -->
+        <div class="card">
+            <div class="card-header">
+                <div class="card-title">Ordered Items</div>
+                <div style="font-size:13px;color:var(--muted)">{{ $order->items->count() }} item(s)</div>
+            </div>
+            <table class="items-table">
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>Item Name</th>
+                        <th>Category</th>
+                        <th>Unit</th>
+                        <th style="text-align:right">Qty</th>
+                        <th style="text-align:right">Unit Price</th>
+                        <th style="text-align:right">Subtotal</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach($order->items as $i => $item)
+                    <tr>
+                        <td style="color:var(--muted);font-size:12px">{{ $i+1 }}</td>
+                        <td style="font-weight:500">{{ $item->item_name }}</td>
+                        <td><span style="background:rgba(15,31,61,.07);color:var(--navy);padding:3px 9px;border-radius:20px;font-size:11px;font-weight:500">{{ $item->category }}</span></td>
+                        <td style="color:var(--muted)">{{ $item->unit }}</td>
+                        <td style="text-align:right">{{ number_format($item->quantity) }}</td>
+                        <td style="text-align:right">₱{{ number_format($item->unit_price, 2) }}</td>
+                        <td style="text-align:right;font-weight:600">₱{{ number_format($item->quantity * $item->unit_price, 2) }}</td>
+                    </tr>
+                    @endforeach
+                    <tr class="total-row">
+                        <td colspan="6" style="text-align:right;padding-right:16px">Total Amount</td>
+                        <td style="text-align:right">₱{{ number_format($order->items->sum(fn($i) => $i->quantity * $i->unit_price), 2) }}</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+    </div>
+</div>
+</body>
+</html>
+
+// ----- FILE: resources/views/Deliveries/create.blade.php -----
+<x-app-layout>
+<x-slot name="header">Record Delivery</x-slot>
+<x-slot name="subheader">Record items received from a supplier</x-slot>
+
+<style>
+.card{background:#fff;border-radius:14px;box-shadow:0 1px 6px rgba(0,0,0,.07);padding:24px;margin-bottom:20px;}
+.card-title{font-size:15px;font-weight:800;color:#0f1f3d;margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid #f3f4f6;}
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+label{display:block;font-size:13px;font-weight:700;color:#374151;margin-bottom:6px;}
+input,select,textarea{width:100%;padding:10px 14px;border:1.5px solid #d1d5db;border-radius:9px;font-size:14px;color:#111827;background:#f9fafb;outline:none;transition:border .2s;}
+input:focus,select:focus,textarea:focus{border-color:#f0ad1f;background:#fff;box-shadow:0 0 0 3px rgba(240,173,31,.12);}
+.btn{padding:10px 20px;border-radius:9px;font-size:13px;font-weight:700;border:none;cursor:pointer;display:inline-flex;align-items:center;gap:6px;text-decoration:none;transition:opacity .2s;}
+.btn:hover{opacity:.85;}
+.btn-gold{background:#f0ad1f;color:#0f1f3d;}
+.btn-navy{background:#0f1f3d;color:#fff;}
+.btn-outline{background:#f3f4f6;color:#374151;border:1px solid #e5e7eb;}
+table{width:100%;border-collapse:collapse;font-size:13px;}
+th{padding:9px 12px;text-align:left;font-size:11px;text-transform:uppercase;color:#6b7280;font-weight:700;background:#f8fafc;border-bottom:1px solid #f3f4f6;}
+td{padding:10px 12px;border-bottom:1px solid #f9fafb;vertical-align:top;}
+td input,td select{padding:8px 10px;font-size:13px;}
+.condition-good{color:#166534;font-weight:700;}
+.condition-partial{color:#9a3412;font-weight:700;}
+.condition-damaged{color:#991b1b;font-weight:700;}
+#orderPlaceholder{text-align:center;padding:24px;color:#9ca3af;font-size:13px;background:#fafafa;border-radius:10px;border:2px dashed #e5e7eb;}
+</style>
+
+<form method="POST" action="{{ route('deliveries.store') }}" id="deliveryForm">
+@csrf
+
+{{-- ORDER SELECTION --}}
+<div class="card">
+    <div class="card-title">Select Order</div>
+    <div class="form-grid">
+        <div>
+            <label for="order_id">Order <span style="color:red">*</span></label>
+            <select name="order_id" id="order_id" required onchange="loadOrderItems(this.value)">
+                <option value="">— Select an approved/shipped order —</option>
+                @foreach($orders as $o)
+                    <option value="{{ $o->id }}" {{ (isset($selectedOrder) && $selectedOrder->id==$o->id) ? 'selected' : '' }}>
+                        {{ $o->order_number }} — {{ $o->supplier->name }}
+                        ({{ \App\Models\Order::STATUSES[$o->status]['label'] }})
+                    </option>
+                @endforeach
+            </select>
+            @if($orders->isEmpty())
+                <p style="color:#d97706;font-size:12px;margin-top:6px;">
+                    ⚠ No approved/shipped orders found. Please approve an order first before recording a delivery.
+                </p>
+            @endif
+        </div>
+        <div>
+            <label for="delivered_at">Date Received <span style="color:red">*</span></label>
+            <input type="date" name="delivered_at" id="delivered_at"
+                   value="{{ date('Y-m-d') }}" required>
+        </div>
+        <div>
+            <label for="received_by">Received By <span style="color:red">*</span></label>
+            <input type="text" name="received_by" id="received_by"
+                   placeholder="Name of person who received the delivery"
+                   value="{{ auth()->user()->name }}" required>
+        </div>
+        <div>
+            <label for="notes">Notes</label>
+            <input type="text" name="notes" id="notes" placeholder="Optional notes about this delivery">
+        </div>
+    </div>
+</div>
+
+{{-- DELIVERY ITEMS — auto-populated when order is selected --}}
+<div class="card">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid #f3f4f6;">
+        <div class="card-title" style="margin:0;padding:0;border:none;">Delivery Items</div>
+        <span id="supplierBadge" style="font-size:12px;color:#6b7280;display:none;">
+            Supplier: <strong id="supplierName"></strong>
+        </span>
+    </div>
+
+    <div id="orderPlaceholder">
+        Select an order above to load its items automatically.
+    </div>
+
+    <div id="itemsTable" style="display:none;">
+        <table>
+            <thead>
+                <tr>
+                    <th>Item</th>
+                    <th>Category</th>
+                    <th>Ordered</th>
+                    <th>Qty Delivered</th>
+                    <th>Qty Damaged</th>
+                    <th>Condition</th>
+                    <th>Damage Notes</th>
+                </tr>
+            </thead>
+            <tbody id="itemsBody"></tbody>
+        </table>
+    </div>
+</div>
+
+{{-- SUBMIT --}}
+<div style="display:flex;gap:12px;justify-content:flex-end;">
+    <a href="{{ route('deliveries.index') }}" class="btn btn-outline">Cancel</a>
+    <button type="submit" class="btn btn-gold" id="submitBtn" disabled>
+        <svg style="width:15px;height:15px;stroke:#0f1f3d" fill="none" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/>
+        </svg>
+        Save Delivery
+    </button>
+</div>
+</form>
+
+<script>
+const conditions = @json(\App\Models\DeliveryItem::CONDITIONS);
+const categories = @json(\App\Models\Supplier::CATEGORIES);
+
+async function loadOrderItems(orderId) {
+    const placeholder = document.getElementById('orderPlaceholder');
+    const table       = document.getElementById('itemsTable');
+    const body        = document.getElementById('itemsBody');
+    const submitBtn   = document.getElementById('submitBtn');
+    const badge       = document.getElementById('supplierBadge');
+
+    if (!orderId) {
+        placeholder.style.display = 'block';
+        table.style.display = 'none';
+        submitBtn.disabled = true;
+        badge.style.display = 'none';
+        return;
+    }
+
+    placeholder.innerHTML = '<span style="color:#f0ad1f">⏳ Loading items...</span>';
+
+    try {
+        const res  = await fetch(`/api/orders/${orderId}/items`);
+        const data = await res.json();
+
+        document.getElementById('supplierName').textContent = data.supplier;
+        badge.style.display = 'inline';
+
+        body.innerHTML = '';
+        data.items.forEach((item, i) => {
+            const catLabel = categories[item.category] || item.category;
+            const condOptions = Object.entries(conditions).map(([k,v]) =>
+                `<option value="${k}">${v.label}</option>`
+            ).join('');
+
+            body.insertAdjacentHTML('beforeend', `
+                <tr>
+                    <td>
+                        <input type="hidden" name="items[${i}][order_item_id]" value="${item.id}">
+                        <input type="hidden" name="items[${i}][item_name]"     value="${item.name}">
+                        <input type="hidden" name="items[${i}][category]"      value="${item.category}">
+                        <input type="hidden" name="items[${i}][unit]"          value="${item.unit}">
+                        <input type="hidden" name="items[${i}][quantity_ordered]" value="${item.quantity}">
+                        <strong style="color:#0f1f3d">${item.name}</strong>
+                    </td>
+                    <td><span style="padding:2px 8px;background:#fef3c7;color:#92400e;border-radius:10px;font-size:11px;font-weight:600;">${catLabel}</span></td>
+                    <td style="font-weight:700">${item.quantity} ${item.unit}</td>
+                    <td>
+                        <input type="number" name="items[${i}][quantity_delivered]"
+                               value="${item.quantity}" min="0" max="${item.quantity}"
+                               step="0.01" style="width:90px" required>
+                    </td>
+                    <td>
+                        <input type="number" name="items[${i}][quantity_damaged]"
+                               value="0" min="0" max="${item.quantity}"
+                               step="0.01" style="width:90px"
+                               oninput="updateCondition(this, ${i})">
+                    </td>
+                    <td>
+                        <select name="items[${i}][condition]" id="cond_${i}" style="width:140px">
+                            ${condOptions}
+                        </select>
+                    </td>
+                    <td>
+                        <input type="text" name="items[${i}][damage_notes]"
+                               placeholder="Optional" style="width:160px">
+                    </td>
+                </tr>
+            `);
+        });
+
+        placeholder.style.display = 'none';
+        table.style.display = 'block';
+        submitBtn.disabled = false;
+    } catch(e) {
+        placeholder.innerHTML = '<span style="color:red">Failed to load items. Please try again.</span>';
+    }
+}
+
+function updateCondition(input, index) {
+    const damaged = parseFloat(input.value) || 0;
+    const sel = document.getElementById(`cond_${index}`);
+    if (!sel) return;
+    if (damaged === 0)       sel.value = 'good';
+    else if (damaged > 0)    sel.value = 'partial_damage';
+}
+
+// Auto-load if order pre-selected
+window.addEventListener('DOMContentLoaded', () => {
+    const sel = document.getElementById('order_id');
+    if (sel.value) loadOrderItems(sel.value);
+});
+</script>
+</x-app-layout>
