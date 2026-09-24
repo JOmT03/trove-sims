@@ -4,38 +4,35 @@ namespace App\Http\Controllers;
 
 use App\Models\Inventory;
 use App\Models\InventoryLog;
-use App\Models\Supplier;
+use App\Models\Site;
 use Illuminate\Http\Request;
 
 class InventoryController extends Controller
 {
-public function index(Request $request)
-{
-    $query = Inventory::with('supplier');
+    public function index(Request $request)
+    {
+        $query = Inventory::with('site');
 
-    if ($request->category) {
-        $query->where('category', $request->category);
+        if ($request->category) {
+            $query->where('category', $request->category);
+        }
+        if ($request->search) {
+            $query->where('item_name', 'like', '%' . $request->search . '%');
+        }
+
+        $inventories = $query->latest()->get();
+        $lowStock = $inventories->filter(fn($i) => $i->isLowStock())->count();
+        $damaged = $inventories->sum('quantity_damaged');
+
+        return view('inventory.index', compact('inventories', 'lowStock', 'damaged'));
     }
-
-    if ($request->search) {
-        $query->where('item_name', 'like', '%' . $request->search . '%');
-    }
-
-    $inventories = $query->latest()->get();
-
-    $lowStock = $inventories->filter(fn($i) => $i->isLowStock())->count();
-    $damaged = $inventories->sum('quantity_damaged');
-
-    return view('inventory.index', compact('inventories', 'lowStock', 'damaged'));
-}
 
     public function create()
     {
-        $categories = Supplier::CATEGORIES;
-        $suppliers  = Supplier::orderBy('name')->get();
-        $units      = ['bags', 'pcs', 'liters', 'gallons', 'meters', 'kg',
-                        'tons', 'rolls', 'sheets', 'sets', 'boxes', 'drums'];
-        return view('inventory.create', compact('categories', 'suppliers', 'units'));
+        $sites = Site::orderBy('site_name')->get();
+        $categories = ['Baking Essentials', 'Dairy & Eggs', 'Flavoring & Fillings', 'Packaging', 'Coffee & Beverage', 'Other'];
+        $units = ['g', 'kg', 'ml', 'liters', 'pcs', 'dozen', 'pack'];
+        return view('inventory.create', compact('sites', 'categories', 'units'));
     }
 
     public function store(Request $request)
@@ -47,7 +44,7 @@ public function index(Request $request)
             'quantity_on_hand' => 'required|numeric|min:0',
             'quantity_damaged' => 'nullable|numeric|min:0',
             'minimum_stock'    => 'required|numeric|min:0',
-            'supplier_id'      => 'nullable|exists:suppliers,id',
+            'site_id'          => 'nullable|exists:sites,id',
             'notes'            => 'nullable|string',
         ]);
 
@@ -58,7 +55,7 @@ public function index(Request $request)
             'quantity_on_hand' => $validated['quantity_on_hand'],
             'quantity_damaged' => $validated['quantity_damaged'] ?? 0,
             'minimum_stock'    => $validated['minimum_stock'],
-            'supplier_id'      => $validated['supplier_id'] ?? null,
+            'site_id'          => $validated['site_id'] ?? null,
             'notes'            => $validated['notes'] ?? null,
         ]);
 
@@ -66,18 +63,17 @@ public function index(Request $request)
             'inventory_id' => $inventory->id,
             'type'         => 'adjustment',
             'quantity'     => $inventory->quantity_on_hand,
-            'reference'    => 'INITIAL-STOCK',
+            'ref_note'     => 'INITIAL-STOCK',
             'notes'        => 'Initial inventory record created',
             'user_id'      => auth()->id(),
         ]);
 
-        return redirect()->route('inventory.index')
-            ->with('success', 'Inventory item added successfully.');
+        return redirect()->route('inventory.index')->with('success', 'Inventory item added successfully.');
     }
 
     public function show(Inventory $inventory)
     {
-        $inventory->load(['supplier', 'logs.user', 'logs.delivery']);
+        $inventory->load(['site', 'logs.user']);
         return view('inventory.show', compact('inventory'));
     }
 
@@ -108,4 +104,35 @@ public function index(Request $request)
 
         return back()->with('success', 'Inventory adjusted successfully.');
     }
+      public function edit(Inventory $inventory)
+    {
+        $sites = Site::orderBy('site_name')->get();
+        $categories = ['Baking Essentials', 'Dairy & Eggs', 'Flavoring & Fillings', 'Packaging', 'Coffee & Beverage', 'Other'];
+        $units = ['g', 'kg', 'ml', 'liters', 'pcs', 'dozen', 'pack'];
+        return view('inventory.edit', compact('inventory', 'sites', 'categories', 'units'));
+    }
+
+    public function update(Request $request, Inventory $inventory)
+    {
+        $validated = $request->validate([
+            'item_name'     => 'required|string|max:255',
+            'category'      => 'required|string|max:255',
+            'unit'          => 'required|string|max:50',
+            'minimum_stock' => 'required|numeric|min:0',
+            'site_id'       => 'nullable|exists:sites,id',
+        ]);
+
+        $inventory->update($validated);
+
+        return redirect()->route('inventory.index')->with('success', 'Item updated successfully.');
+    }
+
+    public function destroy(Inventory $inventory)
+    {
+        $inventory->delete();
+        return redirect()->route('inventory.index')->with('success', 'Item deleted successfully.');
+    }
+
+
+
 }

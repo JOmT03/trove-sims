@@ -11,17 +11,13 @@ class User extends Authenticatable
     use HasFactory, Notifiable;
 
     protected $fillable = [
-        'name',
+        'first_name',
+        'last_name',
+        'mobile_no',
         'email',
         'password',
-        'contact_number',
         'role',
-        'company_name',
-        'company_address',
-        'company_city',
-        'company_zip',
-        'company_email',
-        'company_tel',
+        'site_id',
     ];
 
     protected $hidden = ['password', 'remember_token'];
@@ -35,15 +31,17 @@ class User extends Authenticatable
     }
 
     // ── Role helpers ──
-    public function isAdmin(): bool    { return $this->role === 'admin'; }
-    public function isSupplier(): bool { return $this->role === 'supplier'; }
-    public function isUser(): bool     { return $this->role === 'user'; }
+    public function isOwner(): bool   { return $this->role === 'Owner'; }
+    public function isManager(): bool { return $this->role === 'Manager'; }
+    public function isStaff(): bool   { return $this->role === 'Staff'; }
+
+    // ── Convenience accessor ──
+    public function getNameAttribute(): string
+    {
+        return trim("{$this->first_name} {$this->last_name}");
+    }
 
     // ── Relationships ──
-    public function orders()         { return $this->hasMany(Order::class); }
-    public function products()       { return $this->hasMany(SupplierProduct::class); }
-
-    // The Supplier record linked to this user account
-    // Used in SupplierController to find unlinked supplier users
-    public function supplierRecord() { return $this->hasOne(Supplier::class, 'user_id'); }
+    public function site()   { return $this->belongsTo(Site::class); }
+    public function orders() { return $this->hasMany(Order::class); }
 }

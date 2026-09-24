@@ -1,33 +1,27 @@
-{{--
-    resources/views/layouts/app.blade.php
-    The SHARED layout used by ALL authenticated pages via <x-app-layout>.
-    Contains the persistent sidebar + topbar — so every page has the same nav.
---}}
 <!DOCTYPE html>
 <html lang="{{ str_replace('_', '-', app()->getLocale()) }}">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="csrf-token" content="{{ csrf_token() }}">
-    <title>{{ config('app.name', 'ConSupMan') }}</title>
+    <title>{{ config('app.name', 'Trove') }}</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
     @vite(['resources/css/app.css', 'resources/js/app.js'])
     <style>
-        /* ── Reset & Base ── */
         *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
         :root{
-            --navy:#0f1f3d;
-            --navy-mid:#1a2f52;
-            --gold:#e8a020;
-            --gold-light:#f5b942;
+            --navy:#4A2C17;
+            --navy-mid:#6B3E22;
+            --gold:#D9782C;
+            --gold-light:#E89552;
             --sidebar-w:240px;
             --topbar-h:60px;
-            --bg:#f4f6fa;
+            --bg:#FDF6EC;
             --white:#fff;
-            --text:#1a1a2e;
-            --muted:#7a8499;
-            --border:#e2e8f0;
+            --text:#2E1C10;
+            --muted:#8A7460;
+            --border:#EDE0D0;
             --green:#22c55e;
             --red:#ef4444;
             --orange:#f97316;
@@ -35,7 +29,6 @@
         body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);display:flex;min-height:100vh}
         a{text-decoration:none}
 
-        /* ── Sidebar ── */
         .sidebar{
             width:var(--sidebar-w);
             background:var(--navy);
@@ -84,7 +77,6 @@
         }
         .signout-btn:hover{color:var(--red)}
 
-        /* ── Main Content Area ── */
         .main{
             margin-left:var(--sidebar-w);
             flex:1;
@@ -93,7 +85,6 @@
             min-height:100vh;
         }
 
-        /* ── Topbar ── */
         .topbar{
             background:var(--white);
             border-bottom:1px solid var(--border);
@@ -113,7 +104,6 @@
             padding:4px 10px;border-radius:20px;letter-spacing:.5px;
         }
 
-        /* ── Page Content ── */
         .page-content{
             padding:28px 32px;
             flex:1;
@@ -126,18 +116,16 @@
      PERSISTENT SIDEBAR
 ════════════════════════════════════ --}}
 <aside class="sidebar">
-    {{-- Logo --}}
     <div class="sidebar-logo">
         <div class="logo-mark">
-            <div class="logo-icon">CS</div>
+            <div class="logo-icon">TR</div>
             <div class="logo-text">
-                <div class="brand">Con<span style="color:var(--gold)">Sup</span>Man</div>
-                <div class="sub">Construction Supplier Mgmt</div>
+                <div class="brand">Trove</div>
+                <div class="sub">Food & Cake Shop</div>
             </div>
         </div>
     </div>
 
-    {{-- Navigation --}}
     <nav class="sidebar-nav">
         <div class="nav-label">Main</div>
         <a href="{{ route('dashboard') }}"
@@ -149,16 +137,7 @@
             Dashboard
         </a>
 
-        <div class="nav-label">Procurement</div>
-        <a href="{{ route('suppliers.index') }}"
-           class="nav-item {{ request()->routeIs('suppliers.*') ? 'active' : '' }}">
-            <svg class="nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                      d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0"/>
-            </svg>
-            Suppliers
-        </a>
-        <a href="{{ route('orders.index') }}"
+                    <a href="{{ route('orders.index') }}"
            class="nav-item {{ request()->routeIs('orders.*') ? 'active' : '' }}">
             <svg class="nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -166,13 +145,12 @@
             </svg>
             Orders
         </a>
-        <a href="{{ route('deliveries.index') }}"
-           class="nav-item {{ request()->routeIs('deliveries.*') ? 'active' : '' }}">
+        <a href="{{ route('products.index') }}"
+           class="nav-item {{ request()->routeIs('products.*') ? 'active' : '' }}">
             <svg class="nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                      d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"/>
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>
             </svg>
-            Deliveries
+            Products
         </a>
         <a href="{{ route('inventory.index') }}"
            class="nav-item {{ request()->routeIs('inventory.*') ? 'active' : '' }}">
@@ -182,35 +160,14 @@
             </svg>
             Inventory
         </a>
-
-        {{-- Supplier-only section --}}
-        @if(auth()->user() && auth()->user()->role === 'supplier')
-        <div class="nav-label">Supplier Portal</div>
-        <a href="{{ route('supplier.dashboard') }}"
-           class="nav-item {{ request()->routeIs('supplier.dashboard') ? 'active' : '' }}">
+        <a href="{{ route('deliveries.index') }}"
+           class="nav-item {{ request()->routeIs('deliveries.*') ? 'active' : '' }}">
             <svg class="nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                      d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/>
+                      d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"/>
             </svg>
-            My Dashboard
+            Deliveries
         </a>
-        <a href="{{ route('supplier.products.index') }}"
-           class="nav-item {{ request()->routeIs('supplier.products.*') ? 'active' : '' }}">
-            <svg class="nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                      d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>
-            </svg>
-            My Products
-        </a>
-        <a href="{{ route('supplier.orders') }}"
-           class="nav-item {{ request()->routeIs('supplier.orders') ? 'active' : '' }}">
-            <svg class="nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                      d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/>
-            </svg>
-            Incoming Orders
-        </a>
-        @endif
 
         <div class="nav-label">Account</div>
         <a href="{{ route('profile.edit') }}"
@@ -223,7 +180,6 @@
         </a>
     </nav>
 
-    {{-- User info + logout at the bottom --}}
     <div class="sidebar-user">
         <div class="user-avatar">{{ substr(auth()->user()->name ?? 'U', 0, 1) }}</div>
         <div class="user-info">
@@ -247,7 +203,6 @@
 ════════════════════════════════════ --}}
 <div class="main">
 
-    {{-- Topbar --}}
     <header class="topbar">
         <div>
             @isset($header)
@@ -262,7 +217,6 @@
         </div>
     </header>
 
-    {{-- Page Content --}}
     <div class="page-content">
         {{ $slot }}
     </div>

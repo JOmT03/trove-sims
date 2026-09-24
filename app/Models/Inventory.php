@@ -15,13 +15,13 @@ class Inventory extends Model
         'quantity_on_hand',
         'quantity_damaged',
         'minimum_stock',
-        'supplier_id',
+        'site_id',
         'notes',
     ];
 
-    public function supplier()
+    public function site()
     {
-        return $this->belongsTo(Supplier::class);
+        return $this->belongsTo(Site::class);
     }
 
     public function logs()

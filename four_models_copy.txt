@@ -1,0 +1,151 @@
+﻿===== app/Models/Delivery.php =====
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
+
+class Delivery extends Model
+{
+    use HasFactory;
+
+    protected $fillable = [
+        'order_id', 'supplier_id', 'delivery_number',
+        'delivered_at', 'received_by', 'status', 'notes',
+    ];
+
+    protected $casts = [
+        'delivered_at' => 'date',
+    ];
+
+    public const STATUSES = [
+        'pending'  => ['label' => 'Pending',  'color' => 'bg-yellow-100 text-yellow-800'],
+        'partial'  => ['label' => 'Partial',  'color' => 'bg-orange-100 text-orange-800'],
+        'complete' => ['label' => 'Complete', 'color' => 'bg-green-100 text-green-800'],
+    ];
+
+    public function order()    { return $this->belongsTo(Order::class); }
+    public function supplier() { return $this->belongsTo(Supplier::class); }
+    public function items()    { return $this->hasMany(DeliveryItem::class); }
+
+    protected static function booted(): void
+    {
+        static::creating(function (Delivery $d) {
+            $d->delivery_number = 'DEL-' . date('Y') . '-' . str_pad(
+                static::whereYear('created_at', date('Y'))->count() + 1,
+                4, '0', STR_PAD_LEFT
+            );
+        });
+    }
+}
+
+===== app/Models/DeliveryItem.php =====
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
+
+class DeliveryItem extends Model
+{
+    use HasFactory;
+
+    protected $fillable = [
+        'delivery_id', 'order_item_id', 'item_name', 'category',
+        'unit', 'quantity_ordered', 'quantity_delivered',
+        'quantity_damaged', 'condition', 'damage_notes',
+    ];
+
+    public const CONDITIONS = [
+        'good'           => ['label' => 'Good',           'color' => 'bg-green-100 text-green-800'],
+        'partial_damage' => ['label' => 'Partial Damage', 'color' => 'bg-orange-100 text-orange-800'],
+        'all_damaged'    => ['label' => 'All Damaged',    'color' => 'bg-red-100 text-red-800'],
+    ];
+
+    public function delivery()  { return $this->belongsTo(Delivery::class); }
+    public function orderItem() { return $this->belongsTo(OrderItem::class); }
+}
+
+===== app/Models/Inventory.php =====
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+
+class Inventory extends Model
+{
+    protected $table = 'inventory';
+
+    protected $fillable = [
+        'item_name',
+        'category',
+        'unit',
+        'quantity_on_hand',
+        'quantity_damaged',
+        'minimum_stock',
+        'supplier_id',
+        'notes',
+    ];
+
+    public function supplier()
+    {
+        return $this->belongsTo(Supplier::class);
+    }
+
+    public function logs()
+    {
+        return $this->hasMany(InventoryLog::class);
+    }
+
+    public function usableQuantity()
+    {
+        return $this->quantity_on_hand - $this->quantity_damaged;
+    }
+
+    public function isLowStock()
+    {
+        return $this->usableQuantity() <= $this->minimum_stock;
+    }
+}
+
+===== app/Models/InventoryLog.php =====
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
+
+class InventoryLog extends Model
+{
+    use HasFactory;
+
+    protected $table = 'inventory_logs';
+
+    // ← FIX: was wrong before — had Inventory fields instead of InventoryLog fields
+    protected $fillable = [
+        'inventory_id',
+        'delivery_id',
+        'type',        // received | used | damaged | adjustment
+        'quantity',
+        'reference',
+        'notes',
+        'user_id',
+    ];
+
+    public const TYPES = [
+        'received'   => ['label' => 'Received',   'color' => 'text-green-700'],
+        'used'       => ['label' => 'Used',        'color' => 'text-blue-700'],
+        'damaged'    => ['label' => 'Damaged',     'color' => 'text-red-700'],
+        'adjustment' => ['label' => 'Adjustment',  'color' => 'text-gray-700'],
+    ];
+
+    public function inventory() { return $this->belongsTo(Inventory::class); }
+    public function delivery()  { return $this->belongsTo(Delivery::class); }
+    public function user()      { return $this->belongsTo(User::class); }
+}
+
+
