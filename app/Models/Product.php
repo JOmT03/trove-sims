@@ -3,18 +3,51 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 
 class Product extends Model
 {
-    protected $fillable = ['product_name', 'category', 'price', 'stock_quantity', 'site_id'];
+    protected $table = 'products';
+    protected $primaryKey = 'id';
 
-    public function site() { return $this->belongsTo(Site::class); }
+    protected $fillable = [
+        'product_name',
+        'description',
+        'price',
+        'category',
+        'status',
+    ];
 
-    public function recipe()
+    protected $casts = [
+        'price' => 'float',
+        'created_at' => 'datetime',
+        'updated_at' => 'datetime',
+    ];
+
+    protected $attributes = [
+        'status' => 'active',
+    ];
+
+    /**
+     * Get the order items for this product.
+     */
+    public function orderItems(): HasMany
     {
-        return $this->belongsToMany(Inventory::class, 'product_raw_materials', 'product_id', 'inventory_id')
-                     ->withPivot('quantity_needed');
+        return $this->hasMany(OrderItem::class);
     }
 
-    public function orderItems() { return $this->hasMany(OrderItem::class); }
+    /**
+     * Get the materials/inventory items used in this product.
+     * Many-to-many: A product uses many inventory items
+     */
+    public function materials(): BelongsToMany
+    {
+        return $this->belongsToMany(
+            Inventory::class,
+            'product_materials',
+            'product_id',
+            'inventory_id'
+        )->withPivot('quantity_used');
+    }
 }

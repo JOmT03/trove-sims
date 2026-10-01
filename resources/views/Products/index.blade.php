@@ -1,38 +1,84 @@
-<x-app-layout>
-<x-slot name="header">Products</x-slot>
-<x-slot name="subheader">Cakes, pastries, and coffee items</x-slot>
+@extends('layouts.app')
 
-<style>
-.table-card{background:#fff;border-radius:14px;border:1px solid #EDE0D0;overflow:hidden;}
-table{width:100%;border-collapse:collapse;}
-th{text-align:left;font-size:11px;font-weight:600;color:#8A7460;text-transform:uppercase;padding:14px 20px;background:#FDF6EC;border-bottom:1px solid #EDE0D0;}
-td{padding:15px 20px;font-size:14px;border-bottom:1px solid #EDE0D0;}
-.btn-gold{background:#D9782C;color:#fff;font-weight:700;padding:9px 18px;border-radius:10px;text-decoration:none;}
-</style>
+@section('content')
+<div class="container mx-auto px-4 py-8">
+    <div class="flex justify-between items-center mb-8">
+        <h1 class="text-3xl font-bold">Products</h1>
+        @can('admin')
+            <a href="{{ route('products.create') }}" class="bg-blue-600 text-white px-6 py-2 rounded hover:bg-blue-700">
+                + New Product
+            </a>
+        @endcan
+    </div>
 
-@if(session('success'))<div style="padding:12px 20px;border-radius:10px;margin-bottom:16px;background:rgba(34,197,94,.1);border:1px solid rgba(34,197,94,.3);color:#15803d;">✓ {{ session('success') }}</div>@endif
+    @if (session('success'))
+        <div class="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded mb-4">
+            {{ session('success') }}
+        </div>
+    @endif
 
-<div style="display:flex;justify-content:flex-end;margin-bottom:16px;">
-    <a href="{{ route('products.create') }}" class="btn-gold">+ Add Product</a>
+    @if (session('error'))
+        <div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
+            {{ session('error') }}
+        </div>
+    @endif
+
+    @if ($products->count())
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            @foreach ($products as $product)
+                <div class="bg-white p-6 rounded shadow-md hover:shadow-lg transition">
+                    <h2 class="text-xl font-bold mb-2">{{ $product->product_name }}</h2>
+                    
+                    <div class="mb-4">
+                        <p class="text-gray-600 text-sm">{{ $product->description ?? 'No description' }}</p>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-4 mb-4 border-t pt-4">
+                        <div>
+                            <p class="text-gray-600 text-sm">Price</p>
+                            <p class="text-lg font-bold">₱{{ $product->price }}</p>
+                        </div>
+                        <div>
+                            <p class="text-gray-600 text-sm">Category</p>
+                            <p class="text-lg">{{ $product->category ?? 'N/A' }}</p>
+                        </div>
+                    </div>
+
+                    <div class="mb-4">
+                        <span class="px-3 py-1 rounded text-sm {{ $product->status == 'active' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800' }}">
+                            {{ ucfirst($product->status) }}
+                        </span>
+                    </div>
+
+                    <div class="flex gap-2">
+                        <a href="{{ route('products.show', $product) }}" class="flex-1 bg-gray-600 text-white px-4 py-2 rounded text-center hover:bg-gray-700 text-sm">
+                            View
+                        </a>
+                        @can('admin')
+                            <a href="{{ route('products.edit', $product) }}" class="flex-1 bg-blue-600 text-white px-4 py-2 rounded text-center hover:bg-blue-700 text-sm">
+                                Edit
+                            </a>
+                            <form action="{{ route('products.destroy', $product) }}" method="POST" style="flex: 1;">
+                                @csrf @method('DELETE')
+                                <button type="submit" class="w-full bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700 text-sm"
+                                    onclick="return confirm('Delete this product?')">
+                                    Delete
+                                </button>
+                            </form>
+                        @endcan
+                    </div>
+                </div>
+            @endforeach
+        </div>
+    @else
+        <div class="bg-gray-100 p-8 rounded text-center">
+            <p class="text-gray-600 mb-4">No products yet.</p>
+            @can('admin')
+                <a href="{{ route('products.create') }}" class="bg-blue-600 text-white px-6 py-2 rounded hover:bg-blue-700">
+                    Create First Product
+                </a>
+            @endcan
+        </div>
+    @endif
 </div>
-
-<div class="table-card">
-    <table>
-        <thead><tr><th>Product</th><th>Category</th><th>Price</th><th>Finished Stock</th><th>Recipe Items</th><th>Site</th></tr></thead>
-        <tbody>
-            @forelse($products as $p)
-            <tr>
-                <td>{{ $p->product_name }}</td>
-                <td>{{ $p->category }}</td>
-                <td>₱{{ number_format($p->price, 2) }}</td>
-                <td>{{ $p->stock_quantity }}</td>
-                <td>{{ $p->recipe->count() }} ingredient(s)</td>
-                <td>{{ $p->site->site_name ?? '—' }}</td>
-            </tr>
-            @empty
-            <tr><td colspan="6" style="text-align:center;color:#8A7460;padding:40px;">No products yet.</td></tr>
-            @endforelse
-        </tbody>
-    </table>
-</div>
-</x-app-layout>
+@endsection

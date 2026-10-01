@@ -137,7 +137,7 @@
             Dashboard
         </a>
 
-                    <a href="{{ route('orders.index') }}"
+        <a href="{{ route('orders.index') }}"
            class="nav-item {{ request()->routeIs('orders.*') ? 'active' : '' }}">
             <svg class="nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -145,6 +145,7 @@
             </svg>
             Orders
         </a>
+
         <a href="{{ route('products.index') }}"
            class="nav-item {{ request()->routeIs('products.*') ? 'active' : '' }}">
             <svg class="nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -152,6 +153,7 @@
             </svg>
             Products
         </a>
+
         <a href="{{ route('inventory.index') }}"
            class="nav-item {{ request()->routeIs('inventory.*') ? 'active' : '' }}">
             <svg class="nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -160,6 +162,7 @@
             </svg>
             Inventory
         </a>
+
         <a href="{{ route('deliveries.index') }}"
            class="nav-item {{ request()->routeIs('deliveries.*') ? 'active' : '' }}">
             <svg class="nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -218,7 +221,7 @@
     </header>
 
     <div class="page-content">
-        {{ $slot }}
+        {{ $slot ?? '' }}
     </div>
 
 </div>
