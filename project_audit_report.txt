@@ -1,0 +1,59 @@
+TROVE-SIMS PROJECT AUDIT
+Read-only review date: 2026-10-03
+
+SCOPE AND SAFETY
+Reviewed application PHP, routes, models, controllers, migrations, tests, views, bootstrap, database/cache configuration, package scripts, and existing Laravel log signatures. PHP lint was run on 72 PHP files. The configured DB and Vite ports were checked with TCP only; no SQL query or authentication was performed. No migrations, tests, builds, server commands, or source edits were run. Environment secrets and raw SQL/query bindings are not included here. This report is the only project file created by this review.
+
+EXECUTIVE SUMMARY
+PHP syntax is clean: 72 files linted, zero syntax errors. The strongest confirmed error source is schema/application drift: controllers/models depend on tables and columns absent from the checked-in migrations. The existing log tail contains repeated MySQL missing-table signatures. The configured MySQL endpoint is reachable over TCP, but authentication and schema permissions were not tested. The Vite dev server is not reachable even though public/hot exists, so browser asset loading can fail.
+
+HIGH PRIORITY FINDINGS
+
+1. Required application tables are absent from the migrations.
+The migrations found create suppliers, sites, users, products, orders, order_items, and product_materials. No migration creates inventory, inventory_logs, deliveries, raw_materials, or product_raw_materials, although application models/controllers reference these tables.
+Evidence: app/Models/Inventory.php:9; app/Models/InventoryLog.php:12; app/Models/RawMaterial.php:18; database/migrations/2026_10_01_104615_create_product_materials_table.php:14-17. The existing log tail recorded SQLSTATE 42S02 missing-table errors: deliveries (22), cache (8), product_materials (2). This strongly explains inventory/delivery/recipe failures and some migration errors.
+
+2. The migration named for Laravel's cache table creates suppliers instead.
+The file database/migrations/0001_01_01_000001_create_cache_table.php creates/drops suppliers (lines 11 and 24); it never creates cache. config/cache.php:18 defaults to the database cache store and config/cache.php:45 expects a cache table. Existing logs contain 8 missing-cache-table signatures. Database-backed cache access can therefore fail unless the runtime is configured to a different cache store or the table exists from outside these migrations.
+
+3. Product and order code use columns missing from their table migrations.
+The products migration defines product_name, category, price, stock_quantity, site_id, timestamps, but no status (2026_09_23_163226_create_trove_tables.php:32-39). ProductController writes status='active' (app/Http/Controllers/ProductController.php:45-51), so product creation can fail with an unknown-column SQL error. Product model fillable fields omit stock_quantity and site_id (app/Models/Product.php:14-19), so those submitted values may also be silently discarded by mass assignment.
+The orders migration does not define design_description, needed_by_date, or deposit_amount (2026_09_23_163226_create_trove_tables.php:42-51), but OrderController creates all three (app/Http/Controllers/OrderController.php:59-62), which can make order creation fail.
+
+4. Product recipe/inventory architecture is split between two incompatible data models.
+ProductController and Product::materials() use inventory and product_materials (app/Http/Controllers/ProductController.php:37, 48-80; app/Models/Product.php:42-50). Separate RawMaterial and ProductRawMaterial models use raw_materials and product_raw_materials, but those tables have no migration. OrderController explicitly says raw-material deduction is still planned (app/Http/Controllers/OrderController.php:69-74). As a result, recipe-based consumption is not consistently represented or deducted when orders are fulfilled.
+
+5. Vite development server marker is stale/unreachable.
+public/hot exists and points to the local IPv6 Vite endpoint on port 5173, but that port did not respond to a TCP check. Laravel prioritizes this hot marker over the built manifest, so front-end assets may fail to load until the dev server is running or the marker is cleared. No files were changed as part of this check.
+
+OTHER CONFIRMED ISSUES
+
+6. Product route declarations are duplicated.
+routes/web.php:53-54 and :59-60 register the same products.create and products.store names/paths twice. Duplicate route names can cause confusing route generation/registration behavior.
+
+7. Product view directory casing differs from controller view names.
+The files are under resources/views/Products/ (uppercase P), while ProductController requests products.* (lowercase p), e.g. app/Http/Controllers/ProductController.php:17,24,112,120. This may work on case-insensitive Windows filesystems but fail on Linux deployments.
+
+8. Initial inventory log uses the wrong field name.
+InventoryController passes ref_note at app/Http/Controllers/InventoryController.php:66; InventoryLog only allows reference (app/Models/InventoryLog.php:15-20). The initial reference is therefore discarded in normal Laravel mass-assignment behavior, or may trigger a strict mass-assignment exception if strict mode is enabled.
+
+9. New registrations cannot access admin-only routes by default.
+RegisteredUserController assigns role Staff; AdminMiddleware allows only Owner or Manager (app/Http/Controllers/Auth/RegisteredUserController.php:35-43; app/Http/Middleware/AdminMiddleware.php:13-15). This may be intentional, but a newly registered account cannot use admin workflows without a separate role assignment process.
+
+10. Order stock handling can leave inconsistent inventory.
+OrderController decrements finished-product stock without checking available stock and without wrapping order, items, and decrements in a transaction (app/Http/Controllers/OrderController.php:41-75). Concurrent or failed requests can produce negative stock or partial orders. Raw-material deduction is not performed there.
+
+CONNECTION AND ERROR CHECKS
+- .env selects DB_CONNECTION=mysql. The MySQL host/port accepted a TCP connection; credentials, database existence, and permissions were not tested.
+- PHP has PDO, pdo_mysql, and pdo_sqlite extensions loaded.
+- The existing log tail contained SQLSTATE counts: 42S02 missing table/view (32 total: deliveries 22, cache 8, product_materials 2); 42S01 table already exists (6, product_materials); HY000 general database error (8); 23000 integrity constraint (2). These are historical log signatures, not proof that each error is currently occurring.
+- The earlier terminal context shows `php artisan run dev` exited with code 1. That is not the Laravel dev command; Composer defines `composer run dev`, while `npm run dev` starts Vite only.
+- `php artisan serve` and `php artisan migrate:fresh --seed` also exited with code 1 in the terminal context, but their stderr/stdout was not preserved here. `migrate:fresh` was not rerun because it is destructive. The migration/schema defects above are strong candidates, but the exact failure message is needed to attribute that specific run conclusively.
+- Automated tests were not run because they can write to application/database state, contrary to the read-only constraint. The checked-in tests are mostly Laravel starter/auth/profile tests; no focused inventory, delivery, product recipe, or order-flow tests were found.
+
+RECOMMENDED INVESTIGATION ORDER (NO CHANGES MADE)
+1. Capture the full output of the failed migration command before considering any rerun; do not run migrate:fresh against data that must be retained.
+2. Reconcile the migrations with the active inventory, delivery, cache, product, and order schemas; confirm which of the two raw-material representations is authoritative.
+3. Start the correct Vite command or use built assets, then retest the browser asset requests.
+4. Add focused tests around product creation, order creation/stock checks, inventory logging, and migration setup after schema decisions are made.
+5. Resolve duplicate route declarations and view-directory case consistency before deployment to Linux.

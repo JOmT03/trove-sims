@@ -19,7 +19,7 @@ class ProductController extends Controller
 
     public function create()
     {
-        $inventoryItems = Inventory::where('status', 'active')->get();
+        $inventoryItems = Inventory::orderBy('item_name')->get();
         $sites = Site::all();
         return view('products.create', compact('inventoryItems', 'sites'));
     }
@@ -43,20 +43,22 @@ class ProductController extends Controller
 
             // Create the product
             $product = Product::create([
-                'product_name'  => $validated['product_name'],
-                'category'      => $validated['category'],
-                'price'         => $validated['price'],
-                'status'        => 'active',
+                'product_name'   => $validated['product_name'],
+                'category'       => $validated['category'] ?? null,
+                'price'          => $validated['price'],
+                'stock_quantity' => $validated['stock_quantity'] ?? 0,
+                'site_id'        => $validated['site_id'] ?? null,
+                'status'         => 'active',
             ]);
 
-            // Attach materials to product (recipes)
+            // Attach materials to product (recipe) + deduct from inventory
             if (!empty($validated['recipe'])) {
                 $materials = [];
 
                 foreach ($validated['recipe'] as $recipe_item) {
                     if (empty($recipe_item['inventory_id'])) continue;
 
-                    $inventory_id = $recipe_item['inventory_id'];
+                    $inventory_id    = $recipe_item['inventory_id'];
                     $quantity_needed = $recipe_item['quantity_needed'];
 
                     $inventory = Inventory::findOrFail($inventory_id);
@@ -73,20 +75,20 @@ class ProductController extends Controller
                         'quantity_on_hand' => $inventory->quantity_on_hand - $quantity_needed
                     ]);
 
-                    // Log the deduction
+                    // Log the deduction (matches inventory_logs columns)
                     InventoryLog::create([
                         'inventory_id' => $inventory_id,
-                        'log_type'     => 'product_created',
+                        'type'         => 'used',
                         'quantity'     => $quantity_needed,
+                        'reference'    => 'PRODUCT-CREATE',
                         'notes'        => "Material used for product: {$product->product_name}",
-                        'created_by'   => auth()->id(),
+                        'user_id'      => auth()->id(),
                     ]);
 
                     // Store for attaching to product
                     $materials[$inventory_id] = ['quantity_used' => $quantity_needed];
                 }
 
-                // Attach materials with quantities to product
                 if (!empty($materials)) {
                     $product->materials()->attach($materials);
                 }
@@ -112,7 +114,7 @@ class ProductController extends Controller
 
     public function edit(Product $product)
     {
-        $inventoryItems = Inventory::where('status', 'active')->get();
+        $inventoryItems = Inventory::orderBy('item_name')->get();
         $sites = Site::all();
         $product->load('materials');
         return view('products.edit', compact('product', 'inventoryItems', 'sites'));

@@ -25,7 +25,7 @@ class AppServiceProvider extends ServiceProvider
             URL::forceScheme('https');
         }
 
-        // Admin gate â€” Owner and Manager can manage products, inventory, etc.
+        // Admin gate — Owner and Manager can manage products, inventory, etc.
         // This makes @can('admin') work in Blade views.
         Gate::define('admin', function ($user) {
             return in_array($user->role, ['Owner', 'Manager']);

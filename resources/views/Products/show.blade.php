@@ -1,74 +1,89 @@
-@extends('layouts.app')
+<x-app-layout>
+<x-slot name="header">{{ $product->product_name }}</x-slot>
+<x-slot name="subheader">Product Details & Materials</x-slot>
 
-@section('content')
-<div class="container mx-auto px-4 py-8">
-    <div class="bg-white p-8 rounded shadow">
-        <h1 class="text-3xl font-bold mb-4">{{ $product->product_name }}</h1>
+<style>
+.card { background: var(--white); border-radius: 12px; padding: 24px; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+.card-title { font-size: 15px; font-weight: 700; color: var(--text); margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px solid var(--border); }
+.info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px; }
+.info-item { }
+.info-label { font-size: 12px; color: var(--muted); font-weight: 600; text-transform: uppercase; margin-bottom: 6px; }
+.info-value { font-size: 18px; font-weight: 700; color: var(--text); }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th { padding: 12px; text-align: left; font-size: 11px; text-transform: uppercase; color: var(--muted); background: var(--bg); }
+td { padding: 12px; border-bottom: 1px solid var(--border); }
+.btn { display: inline-block; padding: 10px 16px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 13px; border: none; cursor: pointer; }
+.btn-edit { background: var(--gold); color: var(--white); }
+.btn-delete { background: var(--red); color: var(--white); }
+.btn-back { background: var(--navy); color: var(--white); }
+.status-badge { display: inline-block; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 600; }
+.status-active { background: var(--green); color: var(--white); }
+.status-inactive { background: #e5e7eb; color: var(--text); }
+</style>
 
-        <div class="grid grid-cols-2 gap-4 mb-8">
+<div style="max-width: 1000px; margin: 0 auto;">
+    <div class="card">
+        <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 20px;">
             <div>
-                <p class="text-gray-600">Price</p>
-                <p class="text-2xl font-bold">₱{{ $product->price }}</p>
+                <h1 style="font-size: 24px; font-weight: 800; color: var(--text); margin: 0;">{{ $product->product_name }}</h1>
             </div>
-            <div>
-                <p class="text-gray-600">Category</p>
-                <p class="text-lg">{{ $product->category ?? 'N/A' }}</p>
-            </div>
-            <div>
-                <p class="text-gray-600">Status</p>
-                <span class="px-3 py-1 rounded {{ $product->status == 'active' ? 'bg-green-100 text-green-800' : 'bg-gray-100' }}">
-                    {{ ucfirst($product->status) }}
-                </span>
-            </div>
+            <span class="status-badge {{ $product->status == 'active' ? 'status-active' : 'status-inactive' }}">
+                {{ ucfirst($product->status) }}
+            </span>
         </div>
 
-        @if ($product->description)
-            <div class="mb-8">
-                <p class="text-gray-600">Description</p>
-                <p>{{ $product->description }}</p>
+        <div class="info-grid">
+            <div class="info-item">
+                <div class="info-label">Price</div>
+                <div class="info-value">â‚±{{ number_format($product->price, 2) }}</div>
             </div>
-        @endif
+            <div class="info-item">
+                <div class="info-label">Category</div>
+                <div class="info-value">{{ $product->category ?? 'N/A' }}</div>
+            </div>
+        </div>
+    </div>
 
-        <!-- Materials Used -->
-        @if ($product->materials->count())
-            <div class="mb-8">
-                <h2 class="text-xl font-bold mb-4">Materials Used</h2>
-                <table class="w-full border-collapse border">
-                    <thead>
-                        <tr class="bg-gray-100">
-                            <th class="border p-2 text-left">Material</th>
-                            <th class="border p-2 text-right">Quantity Used</th>
-                            <th class="border p-2 text-center">Unit</th>
+    @if ($product->materials && $product->materials->count())
+        <div class="card">
+            <div class="card-title">Materials Used (Per Unit)</div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Material</th>
+                        <th style="text-align: right;">Quantity Used</th>
+                        <th style="text-align: center;">Unit</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach ($product->materials as $material)
+                        <tr>
+                            <td style="font-weight: 500;">{{ $material->item_name }}</td>
+                            <td style="text-align: right;">{{ number_format($material->pivot->quantity_used, 2) }}</td>
+                            <td style="text-align: center;">{{ $material->unit }}</td>
                         </tr>
-                    </thead>
-                    <tbody>
-                        @foreach ($product->materials as $material)
-                            <tr>
-                                <td class="border p-2">{{ $material->item_name }}</td>
-                                <td class="border p-2 text-right">{{ $material->pivot->quantity_used }}</td>
-                                <td class="border p-2 text-center">{{ $material->unit }}</td>
-                            </tr>
-                        @endforeach
-                    </tbody>
-                </table>
-            </div>
-        @endif
+                    @endforeach
+                </tbody>
+            </table>
+        </div>
+    @else
+        <div class="card">
+            <p style="color: var(--muted); margin: 0;">No materials defined for this product yet.</p>
+        </div>
+    @endif
 
-        <div class="flex gap-4">
-            <a href="{{ route('products.edit', $product) }}" class="bg-blue-600 text-white px-6 py-2 rounded">
-                Edit
-            </a>
-            <form action="{{ route('products.destroy', $product) }}" method="POST" style="display:inline;">
+    <div style="display: flex; gap: 12px; justify-content: flex-end; margin-top: 24px;">
+        <a href="{{ route('products.index') }}" class="btn btn-back">â† Back to Products</a>
+        @can('admin')
+            <a href="{{ route('products.edit', $product) }}" class="btn btn-edit">Edit</a>
+            <form action="{{ route('products.destroy', $product) }}" method="POST" style="display: inline;">
                 @csrf @method('DELETE')
-                <button type="submit" class="bg-red-600 text-white px-6 py-2 rounded" 
-                    onclick="return confirm('Delete this product?')">
+                <button type="submit" class="btn btn-delete" onclick="return confirm('Delete this product? This action cannot be undone.')">
                     Delete
                 </button>
             </form>
-            <a href="{{ route('products.index') }}" class="bg-gray-400 text-white px-6 py-2 rounded">
-                Back
-            </a>
-        </div>
+        @endcan
     </div>
 </div>
-@endsection
+
+</x-app-layout>
