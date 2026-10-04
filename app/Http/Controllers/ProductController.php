@@ -8,6 +8,7 @@ use App\Models\InventoryLog;
 use App\Models\Site;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 
 class ProductController extends Controller
 {
@@ -33,15 +34,19 @@ class ProductController extends Controller
                 'price'         => 'required|numeric|min:0',
                 'stock_quantity' => 'nullable|numeric|min:0',
                 'site_id'       => 'nullable|exists:sites,id',
+                'image'         => 'nullable|image|max:2048',
                 'recipe'        => 'nullable|array',
                 'recipe.*.inventory_id' => 'numeric|exists:inventory,id',
                 'recipe.*.quantity_needed' => 'numeric|min:0.01',
             ]);
 
-            // Start transaction to ensure atomicity
             DB::beginTransaction();
 
-            // Create the product
+            $imagePath = null;
+            if ($request->hasFile('image')) {
+                $imagePath = $request->file('image')->store('products', 'public');
+            }
+
             $product = Product::create([
                 'product_name'   => $validated['product_name'],
                 'category'       => $validated['category'] ?? null,
@@ -49,33 +54,28 @@ class ProductController extends Controller
                 'stock_quantity' => $validated['stock_quantity'] ?? 0,
                 'site_id'        => $validated['site_id'] ?? null,
                 'status'         => 'active',
+                'image_path'     => $imagePath,
             ]);
 
-            // Attach materials to product (recipe) + deduct from inventory
-            if (!empty($validated['recipe'])) {
+            if (! empty($validated['recipe'])) {
                 $materials = [];
-
                 foreach ($validated['recipe'] as $recipe_item) {
                     if (empty($recipe_item['inventory_id'])) continue;
 
                     $inventory_id    = $recipe_item['inventory_id'];
                     $quantity_needed = $recipe_item['quantity_needed'];
-
                     $inventory = Inventory::findOrFail($inventory_id);
 
-                    // Check if enough material available
                     if ($inventory->quantity_on_hand < $quantity_needed) {
                         throw new \Exception(
                             "Insufficient {$inventory->item_name}. Available: {$inventory->quantity_on_hand}, Needed: {$quantity_needed}"
                         );
                     }
 
-                    // Deduct from inventory
                     $inventory->update([
                         'quantity_on_hand' => $inventory->quantity_on_hand - $quantity_needed
                     ]);
 
-                    // Log the deduction (matches inventory_logs columns)
                     InventoryLog::create([
                         'inventory_id' => $inventory_id,
                         'type'         => 'used',
@@ -85,11 +85,10 @@ class ProductController extends Controller
                         'user_id'      => auth()->id(),
                     ]);
 
-                    // Store for attaching to product
                     $materials[$inventory_id] = ['quantity_used' => $quantity_needed];
                 }
 
-                if (!empty($materials)) {
+                if (! empty($materials)) {
                     $product->materials()->attach($materials);
                 }
             }
@@ -129,7 +128,16 @@ class ProductController extends Controller
                 'price'         => 'required|numeric|min:0',
                 'site_id'       => 'nullable|exists:sites,id',
                 'status'        => 'nullable|in:active,inactive',
+                'image'         => 'nullable|image|max:2048',
             ]);
+
+            if ($request->hasFile('image')) {
+                // delete old image if present
+                if ($product->image_path && Storage::disk('public')->exists($product->image_path)) {
+                    Storage::disk('public')->delete($product->image_path);
+                }
+                $validated['image_path'] = $request->file('image')->store('products', 'public');
+            }
 
             $product->update($validated);
 
@@ -145,6 +153,9 @@ class ProductController extends Controller
     public function destroy(Product $product)
     {
         try {
+            if ($product->image_path && Storage::disk('public')->exists($product->image_path)) {
+                Storage::disk('public')->delete($product->image_path);
+            }
             $product->delete();
             return redirect()->route('products.index')
                 ->with('success', 'Product deleted successfully.');

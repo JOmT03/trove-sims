@@ -1,6 +1,6 @@
 <x-app-layout>
 <x-slot name="header">Edit Product</x-slot>
-<x-slot name="subheader">Update product details and materials</x-slot>
+<x-slot name="subheader">Update product details, photo &amp; materials</x-slot>
 
 <style>
 .card{background:#fff;border-radius:14px;box-shadow:0 1px 6px rgba(0,0,0,.07);padding:24px;margin-bottom:20px;}
@@ -8,27 +8,23 @@
 .form-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
 label{display:block;font-size:13px;font-weight:700;color:#374151;margin-bottom:6px;}
 input,select{width:100%;padding:10px 13px;border:1.5px solid #e2e8f0;border-radius:9px;font-size:14px;background:#f8fafc;}
+input[type=file]{padding:8px;}
 table{width:100%;border-collapse:collapse;font-size:13px;}
 th{padding:9px 12px;text-align:left;font-size:11px;text-transform:uppercase;color:#8A7460;background:#FDF6EC;}
 td{padding:10px 12px;border-bottom:1px solid #f9fafb;}
 .btn{padding:10px 20px;border-radius:9px;font-size:13px;font-weight:700;border:none;cursor:pointer;text-decoration:none;}
-.btn-gold{background:#D9782C;color:#fff;}
-.btn-outline{background:#f3f4f6;color:#374151;border:1px solid #e5e7eb;}
+.btn-gold{background:#D9782C;color:#fff;} .btn-outline{background:#f3f4f6;color:#374151;border:1px solid #e5e7eb;}
+.alert-err{background:#FBE4DA;border:1px solid #fecaca;color:#991b1b;padding:12px 16px;border-radius:9px;margin-bottom:16px;font-size:13px;}
+.thumb{width:110px;height:110px;object-fit:cover;border-radius:10px;border:1px solid #EDE0D0;}
+.preview{margin-top:10px;width:110px;height:110px;border-radius:10px;object-fit:cover;border:1px solid #EDE0D0;display:none;}
 </style>
 
 <div style="max-width: 900px; margin: 0 auto;">
 @if ($errors->any())
-    <div style="background:#fee2e2;border:1px solid #fca5a5;color:#7f1d1d;padding:15px;border-radius:8px;margin-bottom:20px;">
-        <strong>Errors:</strong>
-        <ul style="margin:8px 0 0;padding-left:20px;">
-            @foreach ($errors->all() as $error)
-                <li>{{ $error }}</li>
-            @endforeach
-        </ul>
-    </div>
+    <div class="alert-err"><strong>Errors:</strong><ul style="margin:8px 0 0;padding-left:20px;">@foreach ($errors->all() as $error)<li>{{ $error }}</li>@endforeach</ul></div>
 @endif
 
-<form method="POST" action="{{ route('products.update', $product) }}">
+<form method="POST" action="{{ route('products.update', $product) }}" enctype="multipart/form-data">
 @csrf
 @method('PUT')
 
@@ -42,7 +38,7 @@ td{padding:10px 12px;border-bottom:1px solid #f9fafb;}
         <div>
             <label>Category</label>
             <select name="category">
-                <option value="">&mdash; Select &mdash;</option>
+                <option value="">- Select -</option>
                 <option value="Cake" {{ old('category', $product->category) === 'Cake' ? 'selected' : '' }}>Cake</option>
                 <option value="Pastry" {{ old('category', $product->category) === 'Pastry' ? 'selected' : '' }}>Pastry</option>
                 <option value="Coffee" {{ old('category', $product->category) === 'Coffee' ? 'selected' : '' }}>Coffee</option>
@@ -62,13 +58,30 @@ td{padding:10px 12px;border-bottom:1px solid #f9fafb;}
         <div>
             <label>Site</label>
             <select name="site_id">
-                <option value="">&mdash; Unassigned &mdash;</option>
+                <option value="">- Unassigned -</option>
                 @foreach($sites as $site)
-                    <option value="{{ $site->id }}" {{ old('site_id', $product->site_id) == $site->id ? 'selected' : '' }}>
-                        {{ $site->site_name }}
-                    </option>
+                    <option value="{{ $site->id }}" {{ old('site_id', $product->site_id) == $site->id ? 'selected' : '' }}>{{ $site->site_name }}</option>
                 @endforeach
             </select>
+        </div>
+        <div style="grid-column:1/-1;">
+            <label>Product Photo</label>
+            <div style="display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap;">
+                <div>
+                    <div style="font-size:11px;color:#8A7460;margin-bottom:5px;">Current</div>
+                    @if($product->image_path)
+                        <img src="{{ asset('storage/'.$product->image_path) }}" class="thumb" alt="current">
+                    @else
+                        <div class="thumb" style="background:#FDF6EC;display:flex;align-items:center;justify-content:center;color:#C9B9A6;font-size:12px;">None</div>
+                    @endif
+                </div>
+                <div style="flex:1;min-width:200px;">
+                    <div style="font-size:11px;color:#8A7460;margin-bottom:5px;">Upload new (replaces current)</div>
+                    <input type="file" name="image" accept="image/*" onchange="previewImg(this)">
+                    <img id="preview" class="preview" alt="preview">
+                    <p style="font-size:11px;color:#8A7460;margin-top:6px;">JPG or PNG, up to 2MB. Leave empty to keep current.</p>
+                </div>
+            </div>
         </div>
     </div>
 </div>
@@ -77,20 +90,10 @@ td{padding:10px 12px;border-bottom:1px solid #f9fafb;}
     <div class="card-title">Materials Used in This Product</div>
     @if ($product->materials && $product->materials->count())
         <table>
-            <thead>
-                <tr>
-                    <th>Material</th>
-                    <th>Quantity Used (per unit)</th>
-                    <th>Unit</th>
-                </tr>
-            </thead>
+            <thead><tr><th>Material</th><th>Quantity Used (per unit)</th><th>Unit</th></tr></thead>
             <tbody>
                 @foreach ($product->materials as $material)
-                    <tr>
-                        <td>{{ $material->item_name }}</td>
-                        <td>{{ number_format($material->pivot->quantity_used, 2) }}</td>
-                        <td>{{ $material->unit }}</td>
-                    </tr>
+                    <tr><td>{{ $material->item_name }}</td><td>{{ number_format($material->pivot->quantity_used, 2) }}</td><td>{{ $material->unit }}</td></tr>
                 @endforeach
             </tbody>
         </table>
@@ -106,4 +109,11 @@ td{padding:10px 12px;border-bottom:1px solid #f9fafb;}
 </form>
 </div>
 
+<script>
+function previewImg(input){
+    const img = document.getElementById('preview');
+    if(input.files && input.files[0]){ img.src = URL.createObjectURL(input.files[0]); img.style.display='block'; }
+    else { img.style.display='none'; }
+}
+</script>
 </x-app-layout>

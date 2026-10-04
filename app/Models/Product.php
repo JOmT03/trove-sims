@@ -16,6 +16,7 @@ class Product extends Model
         'stock_quantity',
         'status',
         'site_id',
+        'image_path',
     ];
 
     protected $casts = [
@@ -27,7 +28,7 @@ class Product extends Model
         return $this->belongsTo(Site::class);
     }
 
-    // Materials (inventory items) used in this product â€” the recipe
+    // Materials (inventory items) used in this product - the recipe
     public function materials()
     {
         return $this->belongsToMany(Inventory::class, 'product_materials')
