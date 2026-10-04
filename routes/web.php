@@ -5,6 +5,7 @@ use App\Http\Controllers\DeliveryController;
 use App\Http\Controllers\InventoryController;
 use App\Http\Controllers\OrderController;
 use App\Http\Controllers\ProfileController;
+use App\Http\Controllers\ExpenseController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', fn() => view('welcome'))->name('welcome');
@@ -103,4 +104,10 @@ Route::middleware(['auth', 'admin', \App\Http\Middleware\EnsureActive::class])->
     Route::get('/users/{user}/edit',     [\App\Http\Controllers\UserController::class, 'edit'])->name('users.edit');
     Route::put('/users/{user}',          [\App\Http\Controllers\UserController::class, 'update'])->name('users.update');
     Route::patch('/users/{user}/toggle', [\App\Http\Controllers\UserController::class, 'toggleStatus'])->name('users.toggle');
+});
+
+// ===== Expenses & Financial Statement (Trove) =====
+Route::middleware(['auth'])->group(function () {
+    Route::resource('expenses', \App\Http\Controllers\ExpenseController::class);
+    Route::get('/financial-statement', [\App\Http\Controllers\FinancialStatementController::class, 'index'])->name('financial-statement.index');
 });
