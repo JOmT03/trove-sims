@@ -11,20 +11,25 @@ class InventoryController extends Controller
 {
     public function index(Request $request)
     {
-        $query = Inventory::with('site');
+        $view = $request->get('view') === 'archived' ? 'archived' : 'active';
 
-        if ($request->category) {
-            $query->where('category', $request->category);
-        }
+        $base = Inventory::query();
         if ($request->search) {
-            $query->where('item_name', 'like', '%' . $request->search . '%');
+            $base->where('item_name', 'like', '%' . $request->search . '%');
         }
 
-        $inventories = $query->latest()->get();
-        $lowStock = $inventories->filter(fn($i) => $i->isLowStock())->count();
-        $damaged = $inventories->sum('quantity_damaged');
+        $activeCount   = (clone $base)->whereNull('archived_at')->count();
+        $archivedCount = (clone $base)->whereNotNull('archived_at')->count();
 
-        return view('inventory.index', compact('inventories', 'lowStock', 'damaged'));
+        $q = clone $base;
+        if ($view === 'archived') { $q->whereNotNull('archived_at'); }
+        else { $q->whereNull('archived_at'); }
+
+        $inventories = $q->latest()->get();
+        $lowStock = $inventories->filter(fn($i) => $i->isLowStock())->count();
+        $damaged  = $inventories->sum('quantity_damaged');
+
+        return view('inventory.index', compact('inventories', 'lowStock', 'damaged', 'view', 'activeCount', 'archivedCount'));
     }
 
     public function create()
@@ -104,7 +109,8 @@ class InventoryController extends Controller
 
         return back()->with('success', 'Inventory adjusted successfully.');
     }
-      public function edit(Inventory $inventory)
+
+    public function edit(Inventory $inventory)
     {
         $sites = Site::orderBy('site_name')->get();
         $categories = ['Baking Essentials', 'Dairy & Eggs', 'Flavoring & Fillings', 'Packaging', 'Coffee & Beverage', 'Other'];
@@ -127,12 +133,26 @@ class InventoryController extends Controller
         return redirect()->route('inventory.index')->with('success', 'Item updated successfully.');
     }
 
-    public function destroy(Inventory $inventory)
+    public function archive(Inventory $inventory)
     {
-        $inventory->delete();
-        return redirect()->route('inventory.index')->with('success', 'Item deleted successfully.');
+        $inventory->archived_at = now();
+        $inventory->save();
+        return redirect()->route('inventory.index')->with('success', $inventory->item_name . ' archived.');
     }
 
+    public function restore(Inventory $inventory)
+    {
+        $inventory->archived_at = null;
+        $inventory->save();
+        return redirect()->route('inventory.index', ['view' => 'archived'])->with('success', $inventory->item_name . ' restored.');
+    }
 
-
+    public function destroy(Inventory $inventory)
+    {
+        if (auth()->user()->role !== 'Owner') {
+            return back()->with('error', 'Only the Owner can permanently delete records.');
+        }
+        $inventory->delete();
+        return redirect()->route('inventory.index', ['view' => 'archived'])->with('success', 'Item permanently deleted.');
+    }
 }

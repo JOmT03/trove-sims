@@ -1,3 +1,17 @@
+# ============================================================
+#  TROVE - FIX Inventory archive view (clean Blade directives)
+#     powershell -ExecutionPolicy Bypass -File setup-archive-inv-fix.ps1
+# ============================================================
+$ErrorActionPreference = "Stop"
+$root = $PSScriptRoot
+if ([string]::IsNullOrEmpty($root)) { $root = Get-Location }
+if (-not (Test-Path (Join-Path $root "artisan"))) {
+    Write-Host "ERROR: run from your project root (where artisan is)." -ForegroundColor Red; exit 1
+}
+$Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+$p = Join-Path $root "resources\views\inventory\index.blade.php"
+New-Item -ItemType Directory -Force -Path (Split-Path $p) | Out-Null
+$content = @'
 <x-app-layout>
 <x-slot name="header">Inventory</x-slot>
 <x-slot name="subheader">Raw materials &amp; ingredients &mdash; Matina store</x-slot>
@@ -211,3 +225,11 @@ function toggleMenu(e,btn){ e.stopPropagation(); var m=btn.nextElementSibling; v
 document.addEventListener('click', closeMenus);
 </script>
 </x-app-layout>
+
+'@
+[System.IO.File]::WriteAllText($p, $content, $Utf8NoBom)
+Write-Host "  wrote resources\views\inventory\index.blade.php" -ForegroundColor Green
+php artisan view:clear
+php artisan optimize:clear
+Write-Host ""
+Write-Host "DONE - open: http://127.0.0.1:8000/inventory?v=6" -ForegroundColor Cyan

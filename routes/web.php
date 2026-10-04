@@ -111,3 +111,8 @@ Route::middleware(['auth'])->group(function () {
     Route::resource('expenses', \App\Http\Controllers\ExpenseController::class);
     Route::get('/financial-statement', [\App\Http\Controllers\FinancialStatementController::class, 'index'])->name('financial-statement.index');
 });
+// ---- Inventory Archive (Owner & Manager) ----
+Route::middleware(['auth', 'admin', \App\Http\Middleware\EnsureActive::class])->group(function () {
+    Route::patch('/inventory/{inventory}/archive', [\App\Http\Controllers\InventoryController::class, 'archive'])->name('inventory.archive');
+    Route::patch('/inventory/{inventory}/restore', [\App\Http\Controllers\InventoryController::class, 'restore'])->name('inventory.restore');
+});
