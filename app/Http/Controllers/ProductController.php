@@ -30,6 +30,7 @@ class ProductController extends Controller
         try {
             $validated = $request->validate([
                 'product_name'  => 'required|string|max:255|unique:products',
+                'description'   => 'nullable|string|max:1000',
                 'category'      => 'nullable|string|max:255',
                 'price'         => 'required|numeric|min:0',
                 'stock_quantity' => 'nullable|numeric|min:0',
@@ -49,6 +50,7 @@ class ProductController extends Controller
 
             $product = Product::create([
                 'product_name'   => $validated['product_name'],
+                'description'    => $validated['description'] ?? null,
                 'category'       => $validated['category'] ?? null,
                 'price'          => $validated['price'],
                 'stock_quantity' => $validated['stock_quantity'] ?? 0,
@@ -124,6 +126,7 @@ class ProductController extends Controller
         try {
             $validated = $request->validate([
                 'product_name'  => 'required|string|max:255|unique:products,product_name,' . $product->id,
+                'description'   => 'nullable|string|max:1000',
                 'category'      => 'nullable|string|max:255',
                 'price'         => 'required|numeric|min:0',
                 'site_id'       => 'nullable|exists:sites,id',
@@ -132,13 +135,13 @@ class ProductController extends Controller
             ]);
 
             if ($request->hasFile('image')) {
-                // delete old image if present
                 if ($product->image_path && Storage::disk('public')->exists($product->image_path)) {
                     Storage::disk('public')->delete($product->image_path);
                 }
                 $validated['image_path'] = $request->file('image')->store('products', 'public');
             }
 
+            unset($validated['image']);
             $product->update($validated);
 
             return redirect()->route('products.index')

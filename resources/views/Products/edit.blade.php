@@ -35,6 +35,10 @@ td{padding:10px 12px;border-bottom:1px solid #f9fafb;}
             <label>Product Name <span style="color:red">*</span></label>
             <input type="text" name="product_name" value="{{ old('product_name', $product->product_name) }}" required>
         </div>
+        <div style="grid-column:1/-1;">
+            <label>Description</label>
+            <textarea name="description" rows="2" style="width:100%;padding:10px 13px;border:1.5px solid #e2e8f0;border-radius:9px;font-size:14px;background:#f8fafc;font-family:inherit;resize:vertical;" placeholder="Short description shown on the product card...">{{ old('description', $product->description) }}</textarea>
+        </div>
         <div>
             <label>Category</label>
             <select name="category">

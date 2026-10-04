@@ -1,3 +1,19 @@
+# ============================================================
+#  TROVE - add Search + Filter bar to Products page
+#     powershell -ExecutionPolicy Bypass -File update-products-search.ps1
+# ============================================================
+$ErrorActionPreference = "Stop"
+$root = $PSScriptRoot
+if ([string]::IsNullOrEmpty($root)) { $root = Get-Location }
+if (-not (Test-Path (Join-Path $root "artisan"))) {
+    Write-Host "ERROR: run from your project root (where artisan is)." -ForegroundColor Red; exit 1
+}
+$Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+Write-Host "Updating Products page..." -ForegroundColor Yellow
+
+$p = Join-Path $root "resources\views\products\index.blade.php"
+New-Item -ItemType Directory -Force -Path (Split-Path $p) | Out-Null
+$content = @'
 <x-app-layout>
 <x-slot name="header">Products</x-slot>
 <x-slot name="subheader">Trove menu - cakes, pastries &amp; coffee</x-slot>
@@ -150,3 +166,9 @@ function toggleFilter(e){ e.stopPropagation(); var fm = document.getElementById(
 document.addEventListener('click', function(){ closeAllMenus(); var fm=document.getElementById('filterMenu'); if(fm) fm.hidden = true; });
 </script>
 </x-app-layout>
+'@
+[System.IO.File]::WriteAllText($p, $content, $Utf8NoBom)
+Write-Host "  wrote resources\views\products\index.blade.php" -ForegroundColor Green
+php artisan view:clear
+Write-Host ""
+Write-Host "DONE - refresh Products (Ctrl+F5). Search bar + Filter are at the top." -ForegroundColor Cyan

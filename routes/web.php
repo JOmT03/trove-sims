@@ -9,7 +9,7 @@ use Illuminate\Support\Facades\Route;
 
 Route::get('/', fn() => view('welcome'))->name('welcome');
 
-Route::middleware('auth')->group(function () {
+Route::middleware(['auth', \App\Http\Middleware\EnsureActive::class])->group(function () {
 
     Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
     Route::get('/profile',    [ProfileController::class, 'edit'])->name('profile.edit');
@@ -65,6 +65,11 @@ Route::middleware('auth')->group(function () {
 
 });
 
+// Disable public registration - Owner/Manager create accounts in Users module
+Route::match(['get', 'post'], 'register', function () {
+    return redirect()->route('login');
+});
+
 require __DIR__ . '/auth.php';
 
 // ===== Branch Transfers (Trove) =====
@@ -88,4 +93,14 @@ Route::middleware(['auth'])->group(function () {
     Route::post('/commissions', [\App\Http\Controllers\CommissionController::class, 'store'])->name('commissions.store');
     Route::get('/commissions/{commission}', [\App\Http\Controllers\CommissionController::class, 'show'])->name('commissions.show');
     Route::put('/commissions/{commission}/status', [\App\Http\Controllers\CommissionController::class, 'updateStatus'])->name('commissions.status');
+});
+
+// ---- User Management (Owner & Manager) ----
+Route::middleware(['auth', 'admin', \App\Http\Middleware\EnsureActive::class])->group(function () {
+    Route::get('/users',                 [\App\Http\Controllers\UserController::class, 'index'])->name('users.index');
+    Route::get('/users/create',          [\App\Http\Controllers\UserController::class, 'create'])->name('users.create');
+    Route::post('/users',                [\App\Http\Controllers\UserController::class, 'store'])->name('users.store');
+    Route::get('/users/{user}/edit',     [\App\Http\Controllers\UserController::class, 'edit'])->name('users.edit');
+    Route::put('/users/{user}',          [\App\Http\Controllers\UserController::class, 'update'])->name('users.update');
+    Route::patch('/users/{user}/toggle', [\App\Http\Controllers\UserController::class, 'toggleStatus'])->name('users.toggle');
 });
