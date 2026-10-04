@@ -35,7 +35,7 @@ td { padding: 12px; border-bottom: 1px solid var(--border); }
         <div class="info-grid">
             <div class="info-item">
                 <div class="info-label">Price</div>
-                <div class="info-value">â‚±{{ number_format($product->price, 2) }}</div>
+                <div class="info-value">&#8369;{{ number_format($product->price, 2) }}</div>
             </div>
             <div class="info-item">
                 <div class="info-label">Category</div>
@@ -73,7 +73,7 @@ td { padding: 12px; border-bottom: 1px solid var(--border); }
     @endif
 
     <div style="display: flex; gap: 12px; justify-content: flex-end; margin-top: 24px;">
-        <a href="{{ route('products.index') }}" class="btn btn-back">â† Back to Products</a>
+        <a href="{{ route('products.index') }}" class="btn btn-back">&larr; Back to Products</a>
         @can('admin')
             <a href="{{ route('products.edit', $product) }}" class="btn btn-edit">Edit</a>
             <form action="{{ route('products.destroy', $product) }}" method="POST" style="display: inline;">

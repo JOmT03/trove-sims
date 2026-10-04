@@ -1,166 +1,147 @@
 <x-app-layout>
 <x-slot name="header">Dashboard</x-slot>
-<x-slot name="subheader">Overview of Trove's sales and inventory</x-slot>
+<x-slot name="subheader">Batch &amp; stock monitoring overview</x-slot>
 
 <style>
-    .welcome-banner{background:linear-gradient(135deg,var(--navy) 0%,var(--navy-mid) 100%);border-radius:16px;padding:24px 32px;color:var(--white);margin-bottom:24px;position:relative;overflow:hidden}
-    .welcome-banner::after{content:'🍰';position:absolute;right:32px;top:50%;transform:translateY(-50%);font-size:56px;opacity:.25}
-    .welcome-banner h2{font-family:'Syne',sans-serif;font-size:22px;font-weight:800;margin-bottom:4px}
-    .welcome-banner p{font-size:13px;color:rgba(255,255,255,.6)}
-
-    .stats-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:24px}
-    .stat-card{background:var(--white);border-radius:14px;padding:20px 22px;border:1px solid var(--border);position:relative;overflow:hidden}
-    .stat-card::before{content:'';position:absolute;top:0;left:0;right:0;height:3px}
-    .stat-card.blue::before{background:var(--navy)}
-    .stat-card.gold::before{background:var(--gold)}
-    .stat-card.green::before{background:var(--green)}
-    .stat-card.orange::before{background:var(--orange)}
-    .stat-header{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:10px}
-    .stat-label{font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.8px}
-    .stat-icon{width:34px;height:34px;border-radius:9px;display:flex;align-items:center;justify-content:center}
-    .stat-card.blue .stat-icon{background:rgba(15,31,61,.08);color:var(--navy)}
-    .stat-card.gold .stat-icon{background:rgba(232,160,32,.12);color:var(--gold)}
-    .stat-card.green .stat-icon{background:rgba(34,197,94,.12);color:var(--green)}
-    .stat-card.orange .stat-icon{background:rgba(249,115,22,.12);color:var(--orange)}
-    .stat-value{font-family:'DM Sans',sans-serif;font-size:30px;font-weight:800;line-height:1;margin-bottom:5px;font-variant-numeric:tabular-nums}
-    .stat-sub{font-size:12px;color:var(--muted)}
-    .stat-sub .hi{color:var(--green);font-weight:600}
-    .stat-sub .lo{color:var(--red);font-weight:600}
-
-    .two-col{display:grid;grid-template-columns:1fr 320px;gap:18px;margin-bottom:20px}
-    .card{background:var(--white);border-radius:14px;border:1px solid var(--border)}
-    .card-header{padding:18px 24px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
-    .card-title{font-family:'Syne',sans-serif;font-weight:700;font-size:15px}
-    .card-link{font-size:13px;color:var(--gold);text-decoration:none;font-weight:500}
-    .card-link:hover{text-decoration:underline}
-
-    .chart-wrap{padding:20px 24px 16px}
-    .bar-chart{display:flex;align-items:flex-end;gap:8px;height:130px}
-    .bar-col{display:flex;flex-direction:column;align-items:center;flex:1;gap:3px}
-    .bar{width:100%;background:var(--navy);border-radius:4px 4px 0 0;min-height:4px}
-    .bar-count{font-size:11px;font-weight:700;color:var(--navy);font-variant-numeric:tabular-nums}
-    .bar-label{font-size:10px;color:var(--muted);text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%}
-
-    .sup-list{max-height:280px;overflow-y:auto}
-    .sup-row{display:flex;align-items:center;gap:12px;padding:13px 20px;border-bottom:1px solid var(--border)}
-    .sup-row:last-child{border-bottom:none}
-    .sup-row:hover{background:#fafcff}
-    .sup-avatar{width:32px;height:32px;border-radius:9px;background:rgba(15,31,61,.06);display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0}
-    .sup-info{flex:1;min-width:0}
-    .sup-name{font-size:13px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-    .sup-cat{font-size:11px;color:var(--muted)}
-    .sup-badge{font-size:11px;font-weight:600;padding:3px 9px;border-radius:20px;background:rgba(34,197,94,.12);color:#15803d;flex-shrink:0}
-
-    .bottom-row{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
-    .mini-card{background:var(--white);border:1px solid var(--border);border-radius:14px;padding:18px 20px;display:flex;align-items:center;gap:14px}
-    .mini-icon{width:40px;height:40px;border-radius:11px;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0}
-    .mini-body .label{font-size:11px;color:var(--muted);font-weight:500}
-    .mini-body .val{font-family:'DM Sans',sans-serif;font-weight:800;font-size:22px;font-variant-numeric:tabular-nums}
+.dash{--good:#15803D;--good-bg:#E7F3EA;--amber:#B45309;--amber-bg:#FBEBD6;--crit:#C2410C;--crit-bg:#FBE4DA;--info:#3F5B8B;--info-bg:#E6ECF5;--purple:#6D4C9F;--purple-bg:#EDE6F5;--bd:#EDE0D0;--mut:#8A7460;}
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:18px;}
+.kpi{background:#fff;border:1px solid var(--bd);border-radius:14px;padding:16px;box-shadow:0 1px 6px rgba(0,0,0,.06);position:relative;overflow:hidden;}
+.kpi::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;}
+.kpi.a::before{background:var(--info);} .kpi.b::before{background:var(--good);} .kpi.c::before{background:var(--amber);} .kpi.d::before{background:var(--purple);}
+.kpi .l{font-size:10.5px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--mut);}
+.kpi .v{font-size:28px;font-weight:800;line-height:1;margin-top:8px;letter-spacing:-1px;font-variant-numeric:tabular-nums;}
+.kpi .s{font-size:12px;color:var(--mut);margin-top:6px;}
+.grid{display:grid;grid-template-columns:1.5fr 1fr;gap:16px;align-items:start;}
+.col{display:flex;flex-direction:column;gap:16px;}
+.card{background:#fff;border:1px solid var(--bd);border-radius:14px;box-shadow:0 1px 6px rgba(0,0,0,.06);overflow:hidden;}
+.card.star{border-color:#E8C39A;}
+.hd{display:flex;justify-content:space-between;align-items:center;padding:14px 18px 2px;}
+.hd h3{font-size:14.5px;font-weight:800;margin:0;color:#2E1C10;}
+.hd .m{font-size:12px;color:var(--mut);}
+.sum{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--bd);margin:12px 18px 2px;border-radius:12px;overflow:hidden;border:1px solid var(--bd);}
+.sum div{background:#fff;padding:12px;text-align:center;}
+.sum .sl{font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--mut);font-weight:700;}
+.sum .sn{font-weight:800;font-size:17px;margin-top:3px;font-variant-numeric:tabular-nums;}
+.sum .sn.disp{color:var(--info);} .sum .sn.net{color:var(--good);} .sum .sn.loss{color:var(--crit);}
+table{width:100%;border-collapse:collapse;font-size:12.5px;}
+th{text-align:right;font-size:10px;text-transform:uppercase;color:var(--mut);padding:8px 14px;background:#FDF6EC;}
+th:first-child{text-align:left;}
+td{padding:9px 14px;border-top:1px solid var(--bd);text-align:right;font-variant-numeric:tabular-nums;}
+td:first-child{text-align:left;font-weight:500;}
+tr.tot td{font-weight:800;background:#FDF6EC;}
+.ret{color:var(--crit);font-weight:600;}
+.lvl{padding:10px 18px;border-top:1px solid var(--bd);display:flex;align-items:center;gap:12px;}
+.lvl:first-of-type{border-top:none;}
+.lvl-n{width:140px;flex-shrink:0;font-size:12.5px;font-weight:500;}
+.lvl-n small{display:block;color:var(--mut);font-weight:400;font-size:10.5px;}
+.lvl-t{flex:1;height:8px;border-radius:5px;background:#FDF6EC;overflow:hidden;min-width:0;}
+.lvl-f{height:100%;border-radius:5px;}
+.f-red{background:var(--crit);} .f-amber{background:var(--amber);} .f-green{background:var(--good);}
+.lvl-q{width:70px;text-align:right;flex-shrink:0;font-size:11.5px;font-variant-numeric:tabular-nums;white-space:nowrap;}
+.mv{display:flex;align-items:center;gap:11px;padding:10px 18px;border-top:1px solid var(--bd);}
+.mv:first-of-type{border-top:none;}
+.mv-ic{width:28px;height:28px;border-radius:8px;display:grid;place-items:center;flex-shrink:0;font-size:13px;}
+.mv-ic.used{background:var(--amber-bg);color:var(--amber);} .mv-ic.recv{background:var(--good-bg);color:var(--good);} .mv-ic.adj{background:var(--info-bg);color:var(--info);}
+.mv-b{flex:1;min-width:0;} .mv-b .t{font-size:12.5px;font-weight:500;} .mv-b .s{font-size:11px;color:var(--mut);}
+.mv-t{font-size:11px;color:var(--mut);white-space:nowrap;flex-shrink:0;}
+.pr{display:flex;align-items:center;gap:10px;padding:9px 18px;border-top:1px solid var(--bd);}
+.pr:first-of-type{border-top:none;}
+.pr .n{flex:1;min-width:0;font-size:12.5px;font-weight:500;}
+.pr .bar{width:34%;height:7px;border-radius:4px;background:#FDF6EC;overflow:hidden;flex-shrink:0;}
+.pr .bar i{display:block;height:100%;background:#D9782C;border-radius:4px;}
+.pr .c{font-weight:800;font-size:15px;width:52px;text-align:right;font-variant-numeric:tabular-nums;}
+.lead{padding:14px 18px 4px;font-size:12.5px;color:var(--mut);}
+.empty{padding:36px 18px;text-align:center;color:var(--mut);font-size:13px;}
+@media(max-width:900px){.kpis{grid-template-columns:1fr 1fr;}}
+@media(max-width:820px){.grid{grid-template-columns:1fr;}}
 </style>
 
-<div class="welcome-banner">
-    <h2>Welcome back, {{ auth()->user()->name }}.</h2>
-    <p>{{ now()->format('l, F d, Y') }} — Here's your sales and inventory overview.</p>
-</div>
+<div class="dash">
+<section class="kpis">
+    <div class="kpi a"><div class="l">Batch Sent (This Week)</div><div class="v">{{ $batchSent }} <span style="font-size:14px;color:#8A7460;">pcs</span></div><div class="s">to Jacinto</div></div>
+    <div class="kpi b"><div class="l">Net Sold (This Week)</div><div class="v">{{ $netSoldQty }} <span style="font-size:14px;color:#8A7460;">pcs</span></div><div class="s">&#8369;{{ number_format($netSoldRevenue,2) }} &middot; {{ $returnedQty }} returned</div></div>
+    <div class="kpi c"><div class="l">Low Ingredients</div><div class="v">{{ $lowCount }}</div><div class="s">need restock at Matina</div></div>
+    <div class="kpi d"><div class="l">Finished Stock</div><div class="v">{{ $finishedStock }} <span style="font-size:14px;color:#8A7460;">pcs</span></div><div class="s">across {{ $totalProducts }} products</div></div>
+</section>
 
-<div class="stats-grid">
-    <div class="stat-card blue">
-        <div class="stat-header">
-            <span class="stat-label">Total Products</span>
-            <div class="stat-icon"><svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg></div>
-        </div>
-        <div class="stat-value">{{ $productCount }}</div>
-        <div class="stat-sub">Cakes, pastries & coffee items</div>
-    </div>
-    <div class="stat-card gold">
-        <div class="stat-header">
-            <span class="stat-label">Current Orders</span>
-            <div class="stat-icon"><svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z"/></svg></div>
-        </div>
-        <div class="stat-value">{{ $activeOrderCount }}</div>
-        <div class="stat-sub"><span class="lo">{{ $orderPending }} pending</span> · <span class="hi">{{ $completedOrders }} completed</span></div>
-    </div>
-    <div class="stat-card green">
-        <div class="stat-header">
-            <span class="stat-label">Deliveries This Week</span>
-            <div class="stat-icon"><svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"/></svg></div>
-        </div>
-        <div class="stat-value">{{ $deliveriesThisWeek }}</div>
-        <div class="stat-sub"><span class="hi">{{ $deliveryTotal }} total</span> all time</div>
-    </div>
-    <div class="stat-card orange">
-        <div class="stat-header">
-            <span class="stat-label">Inventory Items</span>
-            <div class="stat-icon"><svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg></div>
-        </div>
-        <div class="stat-value">{{ $inventoryCount }}</div>
-        <div class="stat-sub">@if($lowStock > 0)<span class="lo">{{ $lowStock }} low stock</span>@else All stocked @endif</div>
-    </div>
-</div>
+<div class="grid">
+    <div class="col">
+        <section class="card star">
+            <div class="hd"><h3>Latest Batch &mdash; Reconciliation</h3><span class="m">{{ $latestBatch ? $latestBatch->batch_date->format('M d, Y') : '' }}</span></div>
+            @if($latestBatch && $latestBatch->items->count())
+            <div class="sum">
+                <div><div class="sl">Dispatched</div><div class="sn disp">&#8369;{{ number_format($latestBatch->dispatchedValue(),2) }}</div></div>
+                <div><div class="sl">Net Sold</div><div class="sn net">&#8369;{{ number_format($latestBatch->totalRevenue(),2) }}</div></div>
+                <div><div class="sl">Returned (loss)</div><div class="sn loss">&#8369;{{ number_format($latestBatch->lossValue(),2) }}</div></div>
+            </div>
+            <table style="margin-top:8px;">
+                <thead><tr><th>Flavor</th><th>Sent</th><th>Ret</th><th>Net Sold</th><th>Revenue</th></tr></thead>
+                <tbody>
+                    @foreach($latestBatch->items as $it)
+                    <tr><td>{{ $it->product->product_name ?? '-' }}</td><td>{{ $it->qty_sent }}</td><td class="ret">{{ $it->qty_returned }}</td><td style="font-weight:700;">{{ $it->netSold() }}</td><td>&#8369;{{ number_format($it->revenue(),2) }}</td></tr>
+                    @endforeach
+                    <tr class="tot"><td>Total</td><td>{{ $latestBatch->totalSent() }}</td><td>{{ $latestBatch->totalReturned() }}</td><td>{{ $latestBatch->totalNetSold() }}</td><td>&#8369;{{ number_format($latestBatch->totalRevenue(),2) }}</td></tr>
+                </tbody>
+            </table>
+            <div style="padding:12px 18px;"><a href="{{ route('branch-transfers.index') }}" style="font-size:12.5px;color:#4A2C17;font-weight:700;text-decoration:none;">View all batches &rarr;</a></div>
+            @else
+            <div class="empty">No batches yet. <a href="{{ route('branch-transfers.create') }}" style="color:#D9782C;font-weight:700;">Create your first batch dispatch</a>.</div>
+            @endif
+        </section>
 
-<div class="two-col">
-    <div class="card">
-        <div class="card-header">
-            <div class="card-title">Products by Category</div>
-            <div style="font-size:12px;color:var(--muted)">Cake, pastry & coffee items</div>
-        </div>
-        <div class="chart-wrap">
-            @php $maxVal = max(1, collect($productsByCategory)->max()); @endphp
-            <div class="bar-chart">
-                @forelse($productsByCategory as $cat => $count)
-                @php $pct = round(($count / $maxVal) * 100); @endphp
-                <div class="bar-col" title="{{ $cat }}: {{ $count }}">
-                    <div class="bar-count">{{ $count }}</div>
-                    <div class="bar" style="height:{{ max(4,$pct) }}%"></div>
-                    <div class="bar-label">{{ \Illuminate\Support\Str::limit($cat, 8) }}</div>
+        <section class="card">
+            <div class="hd"><h3>Recent Stock Movements</h3><span class="m">ingredient activity</span></div>
+            @if($movements->count())
+                @foreach($movements as $mv)
+                <div class="mv">
+                    @php $t = strtolower($mv->type); @endphp
+                    <span class="mv-ic {{ $t==='received' ? 'recv' : ($t==='used' ? 'used' : 'adj') }}">{{ $t==='received' ? '+' : ($t==='used' ? '-' : '~') }}</span>
+                    <div class="mv-b"><div class="t">{{ ucfirst($mv->type) }} {{ rtrim(rtrim(number_format($mv->quantity,2),'0'),'.') }} {{ $mv->inventory->unit ?? '' }} &middot; {{ $mv->inventory->item_name ?? '' }}</div><div class="s">{{ $mv->notes }}</div></div>
+                    <span class="mv-t">{{ $mv->created_at->diffForHumans(null, true) }} ago</span>
                 </div>
-                @empty
-                <div style="width:100%;text-align:center;color:var(--muted);font-size:13px;padding:20px 0">No products yet.</div>
-                @endforelse
-            </div>
-        </div>
+                @endforeach
+            @else
+                <div class="empty">No stock movements logged yet. They appear when you create products (auto-deduction) or adjust inventory.</div>
+            @endif
+        </section>
     </div>
-    <div class="card">
-        <div class="card-header">
-            <div class="card-title">Recent Orders</div>
-            <a href="{{ route('orders.index') }}" class="card-link">View all →</a>
-        </div>
-        <div class="sup-list">
-            @forelse($recentOrders as $order)
-            <div class="sup-row">
-                <div class="sup-avatar">🧾</div>
-                <div class="sup-info">
-                    <div class="sup-name">{{ $order->customer_name ?? 'Walk-in' }}</div>
-                    <div class="sup-cat">{{ $order->order_type }}</div>
+
+    <div class="col">
+        <section class="card">
+            <div class="hd"><h3>Ingredient Stock Levels</h3><span class="m">lowest first</span></div>
+            @forelse($stockLevels as $inv)
+                @php
+                    $usable = $inv->usableQuantity();
+                    $min = $inv->minimum_stock > 0 ? $inv->minimum_stock : 1;
+                    $pct = max(4, min(100, ($usable / ($min * 2)) * 100));
+                    $cls = $usable <= 0 ? 'f-red' : ($usable <= $inv->minimum_stock ? 'f-amber' : 'f-green');
+                @endphp
+                <div class="lvl">
+                    <span class="lvl-n">{{ $inv->item_name }} <small>min {{ rtrim(rtrim(number_format($inv->minimum_stock,2),'0'),'.') }} {{ $inv->unit }}</small></span>
+                    <span class="lvl-t"><span class="lvl-f {{ $cls }}" style="width:{{ $pct }}%"></span></span>
+                    <span class="lvl-q">{{ rtrim(rtrim(number_format($usable,2),'0'),'.') }} {{ $inv->unit }}</span>
                 </div>
-                <span class="sup-badge">{{ $order->status }}</span>
-            </div>
             @empty
-            <div style="padding:32px;text-align:center;color:var(--muted);font-size:14px">
-                No orders yet.
-            </div>
+                <div class="empty">No inventory items yet.</div>
             @endforelse
-        </div>
+        </section>
+
+        <section class="card">
+            <div class="hd"><h3>Can Still Bake</h3><span class="m">from current stock</span></div>
+            @if(count($canBake))
+            <div class="lead">Based on your recipes and current ingredient stock, you can still make:</div>
+            @foreach($canBake as $name => $qty)
+                <div class="pr">
+                    <span class="n">{{ $name }}</span>
+                    <span class="bar"><i style="width:{{ $maxBake > 0 ? max(6, ($qty / $maxBake) * 100) : 0 }}%"></i></span>
+                    <span class="c">~{{ $qty }}</span>
+                </div>
+            @endforeach
+            @else
+                <div class="empty">Add recipes to your products to see bake estimates.</div>
+            @endif
+        </section>
     </div>
 </div>
-
-<div class="bottom-row">
-    <div class="mini-card">
-        <div class="mini-icon" style="background:rgba(34,197,94,.1);color:var(--green)">✅</div>
-        <div class="mini-body"><div class="label">Completed Orders</div><div class="val">{{ $completedOrders }}</div></div>
-    </div>
-    <div class="mini-card">
-        <div class="mini-icon" style="background:rgba(239,68,68,.1);color:var(--red)">⚠️</div>
-        <div class="mini-body"><div class="label">Low Stock Items</div><div class="val">{{ $lowStock }}</div></div>
-    </div>
-    <div class="mini-card">
-        <div class="mini-icon" style="background:rgba(15,31,61,.08);color:var(--navy)">🚚</div>
-        <div class="mini-body"><div class="label">Total Deliveries</div><div class="val">{{ $deliveryTotal }}</div></div>
-    </div>
-    <div class="mini-card">
-        <div class="mini-icon" style="background:rgba(232,160,32,.12);color:var(--gold)">📋</div>
-        <div class="mini-body"><div class="label">Pending Orders</div><div class="val">{{ $orderPending }}</div></div>
-    </div>
 </div>
-
 </x-app-layout>

@@ -2,42 +2,80 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Delivery;
+use App\Models\Batch;
 use App\Models\Inventory;
-use App\Models\Order;
+use App\Models\InventoryLog;
 use App\Models\Product;
+use Illuminate\Support\Carbon;
 
 class DashboardController extends Controller
 {
     public function index()
     {
-        $productCount = Product::count();
-        $productsByCategory = Product::all()
-            ->groupBy('category')
-            ->map->count()
-            ->sortByDesc(fn ($v) => $v)
-            ->take(8);
+        //  This week's batches (Mon-Sun) 
+        $weekStart = Carbon::now()->startOfWeek()->toDateString();
+        $weekEnd   = Carbon::now()->endOfWeek()->toDateString();
 
-        $activeOrderCount = Order::whereIn('status', ['Pending', 'Processing'])->count();
-        $orderPending      = Order::where('status', 'Pending')->count();
-        $completedOrders   = Order::where('status', 'Completed')->count();
+        $weekBatches = Batch::with('items')
+            ->whereBetween('batch_date', [$weekStart, $weekEnd])
+            ->get();
 
-        $deliveryTotal      = Delivery::count();
-        $deliveriesThisWeek = Delivery::whereBetween('created_at', [
-            now()->startOfWeek(), now()->endOfWeek(),
-        ])->count();
+        $batchSent      = $weekBatches->sum(fn ($b) => $b->totalSent());
+        $returnedQty    = $weekBatches->sum(fn ($b) => $b->totalReturned());
+        $netSoldQty     = $weekBatches->sum(fn ($b) => $b->totalNetSold());
+        $netSoldRevenue = $weekBatches->sum(fn ($b) => $b->totalRevenue());
 
-        $inventoryCount = Inventory::count();
-        $lowStock       = Inventory::all()->filter->isLowStock()->count();
+        //  Inventory (raw materials) 
+        $inventories = Inventory::orderBy('item_name')->get();
+        $lowCount    = $inventories->filter(fn ($i) => $i->isLowStock())->count();
 
-        $recentOrders = Order::with('user')->latest()->take(5)->get();
+        // lowest-stock first, show up to 6
+        $stockLevels = $inventories
+            ->sortBy(fn ($i) => $i->minimum_stock > 0 ? $i->usableQuantity() / $i->minimum_stock : 999)
+            ->take(6)
+            ->values();
+
+        //  Finished products 
+        $finishedStock = (int) Product::sum('stock_quantity');
+        $totalProducts = Product::count();
+
+        //  Latest batch (for reconciliation card) 
+        $latestBatch = Batch::with(['items.product', 'sourceSite', 'destinationSite'])
+            ->orderBy('batch_date', 'desc')
+            ->orderBy('id', 'desc')
+            ->first();
+
+        //  Can Still Bake (limiting-ingredient math from recipes) 
+        $canBake = [];
+        foreach (Product::with('materials')->where('status', 'active')->get() as $product) {
+            if ($product->materials->isEmpty()) {
+                continue;
+            }
+            $caps = [];
+            foreach ($product->materials as $mat) {
+                $need = (float) $mat->pivot->quantity_used;
+                if ($need > 0) {
+                    $caps[] = (int) floor($mat->quantity_on_hand / $need);
+                }
+            }
+            if (! empty($caps)) {
+                $canBake[$product->product_name] = min($caps);
+            }
+        }
+        arsort($canBake);
+        $canBake = array_slice($canBake, 0, 5, true);
+        $maxBake = ! empty($canBake) ? max(array_values($canBake)) : 0;
+
+        //  Recent stock movements (ingredient audit trail) 
+        $movements = InventoryLog::with('inventory')
+            ->orderBy('created_at', 'desc')
+            ->take(6)
+            ->get();
 
         return view('dashboard', compact(
-            'productCount', 'productsByCategory',
-            'activeOrderCount', 'orderPending', 'completedOrders',
-            'deliveryTotal', 'deliveriesThisWeek',
-            'inventoryCount', 'lowStock',
-            'recentOrders'
+            'batchSent', 'returnedQty', 'netSoldQty', 'netSoldRevenue',
+            'lowCount', 'stockLevels', 'finishedStock', 'totalProducts',
+            'latestBatch', 'canBake', 'maxBake', 'movements'
         ));
     }
 }

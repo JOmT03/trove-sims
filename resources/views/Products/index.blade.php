@@ -34,7 +34,7 @@
                     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px; border-top: 1px solid var(--border); padding-top: 15px;">
                         <div>
                             <p style="color: var(--muted); font-size: 12px;">Price</p>
-                            <p style="font-size: 18px; font-weight: bold;">â‚±{{ number_format($product->price, 2) }}</p>
+                            <p style="font-size: 18px; font-weight: bold;">&#8369;{{ number_format($product->price, 2) }}</p>
                         </div>
                         <div>
                             <p style="color: var(--muted); font-size: 12px;">Status</p>

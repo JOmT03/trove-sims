@@ -66,3 +66,26 @@ Route::middleware('auth')->group(function () {
 });
 
 require __DIR__ . '/auth.php';
+
+// ===== Branch Transfers (Trove) =====
+Route::middleware(['auth'])->group(function () {
+    Route::get('/branch-transfers', [\App\Http\Controllers\BranchTransferController::class, 'index'])->name('branch-transfers.index');
+    Route::get('/branch-transfers/create', [\App\Http\Controllers\BranchTransferController::class, 'create'])->name('branch-transfers.create');
+    Route::post('/branch-transfers', [\App\Http\Controllers\BranchTransferController::class, 'store'])->name('branch-transfers.store');
+    Route::get('/branch-transfers/{batch}', [\App\Http\Controllers\BranchTransferController::class, 'show'])->name('branch-transfers.show');
+    Route::put('/branch-transfers/{batch}/returns', [\App\Http\Controllers\BranchTransferController::class, 'logReturns'])->name('branch-transfers.returns');
+});
+
+// ===== Reports (Trove) =====
+Route::middleware(['auth'])->group(function () {
+    Route::get('/reports', [\App\Http\Controllers\ReportController::class, 'index'])->name('reports.index');
+});
+
+// ===== Commissions (Trove) =====
+Route::middleware(['auth'])->group(function () {
+    Route::get('/commissions', [\App\Http\Controllers\CommissionController::class, 'index'])->name('commissions.index');
+    Route::get('/commissions/create', [\App\Http\Controllers\CommissionController::class, 'create'])->name('commissions.create');
+    Route::post('/commissions', [\App\Http\Controllers\CommissionController::class, 'store'])->name('commissions.store');
+    Route::get('/commissions/{commission}', [\App\Http\Controllers\CommissionController::class, 'show'])->name('commissions.show');
+    Route::put('/commissions/{commission}/status', [\App\Http\Controllers\CommissionController::class, 'updateStatus'])->name('commissions.status');
+});

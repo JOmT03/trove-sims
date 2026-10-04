@@ -42,14 +42,14 @@ td{padding:10px 12px;border-bottom:1px solid #f9fafb;}
         <div>
             <label>Category</label>
             <select name="category">
-                <option value="">â€” Select â€”</option>
+                <option value="">&mdash; Select &mdash;</option>
                 <option value="Cake" {{ old('category', $product->category) === 'Cake' ? 'selected' : '' }}>Cake</option>
                 <option value="Pastry" {{ old('category', $product->category) === 'Pastry' ? 'selected' : '' }}>Pastry</option>
                 <option value="Coffee" {{ old('category', $product->category) === 'Coffee' ? 'selected' : '' }}>Coffee</option>
             </select>
         </div>
         <div>
-            <label>Price (â‚±) <span style="color:red">*</span></label>
+            <label>Price (&#8369;) <span style="color:red">*</span></label>
             <input type="number" name="price" step="0.01" min="0" value="{{ old('price', $product->price) }}" required>
         </div>
         <div>
@@ -62,7 +62,7 @@ td{padding:10px 12px;border-bottom:1px solid #f9fafb;}
         <div>
             <label>Site</label>
             <select name="site_id">
-                <option value="">â€” Unassigned â€”</option>
+                <option value="">&mdash; Unassigned &mdash;</option>
                 @foreach($sites as $site)
                     <option value="{{ $site->id }}" {{ old('site_id', $product->site_id) == $site->id ? 'selected' : '' }}>
                         {{ $site->site_name }}

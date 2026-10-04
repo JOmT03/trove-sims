@@ -1,15 +1,15 @@
 <x-app-layout>
 <x-slot name="header">Inventory</x-slot>
-<x-slot name="subheader">Raw materials and ingredients across all sites</x-slot>
+<x-slot name="subheader">Raw materials and ingredients</x-slot>
 
 <style>
 .summary-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:20px;}
-.summary-card{background:#fff;border-radius:14px;box-shadow:0 1px 6px rgba(0,0,0,.07);padding:20px;border-left:4px solid #D9782C;}
-.summary-card.green{border-left-color:#22c55e;}
+.summary-card{background:#fff;border-radius:14px;box-shadow:0 1px 6px rgba(0,0,0,.07);padding:20px;border-left:4px solid #22c55e;}
+.summary-card.orange{border-left-color:#FFA500;}
 .summary-card.red{border-left-color:#ef4444;}
 .summary-card .label{font-size:11px;color:#8A7460;text-transform:uppercase;font-weight:700;margin-bottom:4px;}
 .summary-card .value{font-size:28px;font-weight:800;color:#4A2C17;}
-.summary-card.green .value{color:#15803d;}
+.summary-card.orange .value{color:#FFA500;}
 .summary-card.red .value{color:#dc2626;}
 .table-card{background:#fff;border-radius:14px;box-shadow:0 1px 6px rgba(0,0,0,.07);overflow:hidden;}
 table{width:100%;border-collapse:collapse;font-size:14px;}
@@ -26,7 +26,7 @@ td{padding:12px 20px;border-top:1px solid #EDE0D0;}
         <div class="label">Total Items</div>
         <div class="value">{{ $inventories->count() }}</div>
     </div>
-    <div class="summary-card green">
+    <div class="summary-card orange">
         <div class="label">Low Stock Items</div>
         <div class="value">{{ $lowStock }}</div>
     </div>
@@ -43,7 +43,7 @@ td{padding:12px 20px;border-top:1px solid #EDE0D0;}
 <div class="table-card">
     <table>
         <thead>
-            <tr><th>Item</th><th>Category</th><th>Stock</th><th>Min. Stock</th><th>Site</th></tr>
+            <tr><th>Item</th><th>Category</th><th>Stock</th><th>Min. Stock</th></tr>
         </thead>
         <tbody>
             @forelse($inventories as $item)
@@ -52,14 +52,13 @@ td{padding:12px 20px;border-top:1px solid #EDE0D0;}
                     <td>{{ $item->category }}</td>
                     <td class="{{ $item->isLowStock() ? 'low-stock' : '' }}">
                         {{ $item->quantity_on_hand }} {{ $item->unit }}
-                        @if($item->isLowStock()) ⚠️ @endif
+                        @if($item->isLowStock())  @endif
                     </td>
                     <td>{{ $item->minimum_stock }} {{ $item->unit }}</td>
-                    <td>{{ $item->site->site_name ?? '—' }}</td>
                 </tr>
             @empty
                 <tr>
-                    <td colspan="5" style="text-align:center;padding:40px;color:#8A7460;">No inventory found.</td>
+                    <td colspan="4" style="text-align:center;padding:40px;color:#8A7460;">No inventory found.</td>
                 </tr>
             @endforelse
         </tbody>
