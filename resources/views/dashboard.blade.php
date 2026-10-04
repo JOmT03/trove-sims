@@ -11,6 +11,11 @@
 .kpi .l{font-size:10.5px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--mut);}
 .kpi .v{font-size:28px;font-weight:800;line-height:1;margin-top:8px;letter-spacing:-1px;font-variant-numeric:tabular-nums;}
 .kpi .s{font-size:12px;color:var(--mut);margin-top:6px;}
+a.kpi{text-decoration:none;color:inherit;cursor:pointer;transition:transform .15s ease,box-shadow .15s ease,border-color .15s ease;}
+a.kpi:hover{transform:translateY(-3px);box-shadow:0 4px 8px rgba(0,0,0,.07),0 14px 30px rgba(0,0,0,.11);border-color:#8A7460;}
+a.kpi:focus-visible{outline:2px solid var(--info);outline-offset:2px;}
+.kpi-go{display:flex;align-items:center;gap:5px;font-size:11px;font-weight:700;color:var(--mut);margin-top:8px;opacity:.5;transition:opacity .15s ease,color .15s ease;}
+a.kpi:hover .kpi-go{opacity:1;color:#2E1C10;}
 .grid{display:grid;grid-template-columns:1.5fr 1fr;gap:16px;align-items:start;}
 .col{display:flex;flex-direction:column;gap:16px;}
 .card{background:#fff;border:1px solid var(--bd);border-radius:14px;box-shadow:0 1px 6px rgba(0,0,0,.06);overflow:hidden;}
@@ -58,10 +63,10 @@ tr.tot td{font-weight:800;background:#FDF6EC;}
 
 <div class="dash">
 <section class="kpis">
-    <div class="kpi a"><div class="l">Batch Sent (This Week)</div><div class="v">{{ $batchSent }} <span style="font-size:14px;color:#8A7460;">pcs</span></div><div class="s">to Jacinto</div></div>
-    <div class="kpi b"><div class="l">Net Sold (This Week)</div><div class="v">{{ $netSoldQty }} <span style="font-size:14px;color:#8A7460;">pcs</span></div><div class="s">&#8369;{{ number_format($netSoldRevenue,2) }} &middot; {{ $returnedQty }} returned</div></div>
-    <div class="kpi c"><div class="l">Low Ingredients</div><div class="v">{{ $lowCount }}</div><div class="s">need restock at Matina</div></div>
-    <div class="kpi d"><div class="l">Finished Stock</div><div class="v">{{ $finishedStock }} <span style="font-size:14px;color:#8A7460;">pcs</span></div><div class="s">across {{ $totalProducts }} products</div></div>
+    <a href="{{ Route::has('branch-transfers.index') ? route('branch-transfers.index') : '#' }}" class="kpi a"><div class="l">Batch Sent (This Week)</div><div class="v">{{ $batchSent }} <span style="font-size:14px;color:#8A7460;">pcs</span></div><div class="s">to Jacinto</div><span class="kpi-go">View Branch Transfers &rarr;</span></a>
+    <a href="{{ Route::has('reports.index') ? route('reports.index') : '#' }}" class="kpi b"><div class="l">Net Sold (This Week)</div><div class="v">{{ $netSoldQty }} <span style="font-size:14px;color:#8A7460;">pcs</span></div><div class="s">&#8369;{{ number_format($netSoldRevenue,2) }} &middot; {{ $returnedQty }} returned</div><span class="kpi-go">View Reports &rarr;</span></a>
+    <a href="{{ route('inventory.index') }}" class="kpi c"><div class="l">Low Ingredients</div><div class="v">{{ $lowCount }}</div><div class="s">need restock at Matina</div><span class="kpi-go">View Inventory &rarr;</span></a>
+    <a href="{{ route('products.index') }}" class="kpi d"><div class="l">Finished Stock</div><div class="v">{{ $finishedStock }} <span style="font-size:14px;color:#8A7460;">pcs</span></div><div class="s">across {{ $totalProducts }} products</div><span class="kpi-go">View Products &rarr;</span></a>
 </section>
 
 <div class="grid">

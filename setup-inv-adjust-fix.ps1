@@ -1,3 +1,19 @@
+# ============================================================
+#  TROVE - Inventory UI (per-row Blade-rendered Adjust form, foolproof)
+#     powershell -ExecutionPolicy Bypass -File setup-inv-adjust-fix.ps1
+# ============================================================
+$ErrorActionPreference = "Stop"
+$root = $PSScriptRoot
+if ([string]::IsNullOrEmpty($root)) { $root = Get-Location }
+if (-not (Test-Path (Join-Path $root "artisan"))) {
+    Write-Host "ERROR: run from your project root (where artisan is)." -ForegroundColor Red; exit 1
+}
+$Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+Write-Host "Rebuilding Inventory page (foolproof Adjust)..." -ForegroundColor Yellow
+
+$p = Join-Path $root "resources\views\inventory\index.blade.php"
+New-Item -ItemType Directory -Force -Path (Split-Path $p) | Out-Null
+$content = @'
 <x-app-layout>
 <x-slot name="header">Inventory</x-slot>
 <x-slot name="subheader">Raw materials &amp; ingredients &mdash; Matina store</x-slot>
@@ -12,7 +28,7 @@
 .inv-alert{padding:12px 16px;border-radius:9px;margin-bottom:16px;font-size:13px;}
 .inv-alert.ok{background:#E7F3EA;border:1px solid #bbf7d0;color:#166534;}
 .inv-alert.err{background:#FBE4DA;border:1px solid #fecaca;color:#991b1b;}
-.inv-kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:18px;}
+.inv-kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:20px;}
 @media(max-width:640px){.inv-kpis{grid-template-columns:1fr;}}
 .ikpi{background:var(--white);border:1px solid var(--border);border-radius:14px;padding:16px 18px;box-shadow:0 1px 6px rgba(74,44,23,.06);position:relative;overflow:hidden;cursor:pointer;text-align:left;font-family:var(--f-body);transition:transform .14s ease,box-shadow .14s ease,border-color .14s ease;}
 .ikpi::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;}
@@ -24,12 +40,8 @@
 .ikpi.k-low .v{color:#B45309;} .ikpi.k-dmg .v{color:#C2410C;}
 .ikpi .hint{font-size:11px;color:var(--muted);margin-top:5px;opacity:.7;}
 .ikpi.active .hint{opacity:1;color:var(--gold);font-weight:600;}
-.inv-bar{display:flex;align-items:center;gap:12px;margin-bottom:12px;}
-.inv-search{flex:1;min-width:180px;position:relative;}
-.inv-search svg{position:absolute;left:14px;top:50%;transform:translateY(-50%);width:17px;height:17px;stroke:var(--muted);fill:none;}
-.inv-search input{width:100%;padding:11px 14px 11px 40px;border:1px solid var(--border);border-radius:999px;font-size:14px;background:var(--white);color:var(--text);font-family:var(--f-body);}
-.inv-search input:focus{outline:none;border-color:var(--gold);box-shadow:0 0 0 3px rgba(217,120,44,.14);}
-.addbtn{background:var(--gold);color:#fff;border:none;border-radius:9px;padding:10px 16px;font-size:13px;font-weight:700;cursor:pointer;text-decoration:none;white-space:nowrap;}
+.inv-bar{display:flex;justify-content:flex-end;margin-bottom:12px;}
+.addbtn{background:var(--gold);color:#fff;border:none;border-radius:9px;padding:10px 16px;font-size:13px;font-weight:700;cursor:pointer;text-decoration:none;}
 .inv-card{background:var(--white);border:1px solid var(--border);border-radius:16px;box-shadow:0 1px 6px rgba(74,44,23,.06);overflow:visible;}
 .inv-card table{width:100%;border-collapse:collapse;font-size:13px;}
 .inv-card th{text-align:left;font-size:10.5px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);padding:12px 16px;background:var(--bg);font-weight:700;}
@@ -50,7 +62,7 @@
 .kebab{width:30px;height:30px;border-radius:8px;border:1px solid transparent;background:none;color:var(--muted);font-size:18px;line-height:1;cursor:pointer;display:inline-grid;place-items:center;opacity:0;transition:opacity .12s ease,background .12s ease;}
 .inv-card tbody tr:hover .kebab{opacity:1;}
 .kebab:hover{background:var(--white);border-color:var(--border);color:var(--text);}
-.menu{position:absolute;top:38px;right:10px;background:var(--white);border:1px solid var(--border);border-radius:11px;box-shadow:0 8px 24px rgba(0,0,0,.17);overflow:hidden;z-index:20;min-width:150px;}
+.menu{position:absolute;top:38px;right:10px;background:var(--white);border:1px solid var(--border);border-radius:11px;box-shadow:0 8px 24px rgba(0,0,0,.17);overflow:hidden;z-index:20;min-width:155px;}
 .menu a{display:flex;align-items:center;gap:9px;padding:10px 14px;font-size:13px;font-weight:600;color:var(--text);text-decoration:none;cursor:pointer;}
 .menu a:hover{background:var(--bg);}
 .menu a.del{color:#C2410C;border-top:1px solid var(--border);}
@@ -59,6 +71,15 @@
 .legend{display:flex;gap:16px;flex-wrap:wrap;margin-top:14px;font-size:11.5px;color:var(--muted);}
 .legend span{display:inline-flex;align-items:center;gap:6px;}
 .legend i{width:9px;height:9px;border-radius:50%;display:inline-block;}
+.modal-ov{position:fixed;inset:0;background:rgba(46,28,16,.45);display:flex;align-items:center;justify-content:center;z-index:200;padding:16px;}
+.modal{background:var(--white);border-radius:16px;width:100%;max-width:400px;padding:22px;box-shadow:0 20px 50px rgba(0,0,0,.25);}
+.modal-h{font-family:var(--f-display);font-size:16px;font-weight:800;color:var(--text);margin-bottom:16px;}
+.modal-h span{color:var(--gold);}
+.modal label{display:block;font-size:12px;font-weight:700;color:var(--muted);margin:12px 0 5px;}
+.modal select,.modal input{width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:9px;font-size:14px;background:var(--bg);color:var(--text);font-family:var(--f-body);}
+.modal-act{display:flex;gap:10px;justify-content:flex-end;margin-top:18px;}
+.mbtn{border:none;border-radius:9px;padding:9px 16px;font-size:13px;font-weight:700;cursor:pointer;font-family:var(--f-body);}
+.mbtn.gold{background:var(--gold);color:#fff;} .mbtn.ghost{background:var(--bg);color:var(--text);border:1px solid var(--border);}
 </style>
 
 <div class="inv-wrap">
@@ -71,13 +92,7 @@
         <button class="ikpi k-dmg" data-filter="dmg" onclick="setFilter(this)"><div class="l">With Damaged Units</div><div class="v">{{ $dmgItems }}</div><div class="hint">click to filter</div></button>
     </div>
 
-    <div class="inv-bar">
-        <div class="inv-search">
-            <svg stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-4.35-4.35M17 11a6 6 0 11-12 0 6 6 0 0112 0z"/></svg>
-            <input type="text" id="search" placeholder="Search items..." oninput="applyFilters()">
-        </div>
-        @can('admin')<a class="addbtn" href="{{ route('inventory.create') }}">+ Add Item</a>@endcan
-    </div>
+    @can('admin')<div class="inv-bar"><a class="addbtn" href="{{ route('inventory.create') }}">+ Add Item</a></div>@endcan
 
     <div class="inv-card">
         <table>
@@ -89,7 +104,7 @@
                     $t = $on<=0 ? 'out' : ($on<=$min ? 'crit' : ($on<=$min*1.5 ? 'low' : 'ok'));
                     $labels=['ok'=>'OK','low'=>'Low','crit'=>'Critical','out'=>'Out'];
                 @endphp
-                <tr data-tier="{{ $t }}" data-dmg="{{ $dmg>0?'1':'0' }}" data-name="{{ strtolower($inv->item_name) }}">
+                <tr data-tier="{{ $t }}" data-dmg="{{ $dmg>0?'1':'0' }}">
                     <td>
                         <div class="item">{{ $inv->item_name }}</div>
                         @if($dmg>0)<div class="dmgnote">&#9888; {{ number_format($dmg,2) }} {{ $inv->unit }} damaged</div>@endif
@@ -103,6 +118,7 @@
                             <a href="{{ route('inventory.show',$inv) }}"><svg viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" d="M2.5 12C3.7 7.9 7.5 5 12 5s8.3 2.9 9.5 7c-1.2 4.1-5 7-9.5 7s-8.3-2.9-9.5-7z"/></svg> View</a>
                             @can('admin')
                                 <a href="{{ route('inventory.edit',$inv) }}"><svg viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7M18.5 2.5a2.1 2.1 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg> Edit</a>
+                                <a onclick="event.stopPropagation(); document.getElementById('adjM{{ $inv->id }}').hidden=false;"><svg viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 5v14M5 12h14"/></svg> Adjust Stock</a>
                                 <a class="del" onclick="if(confirm('Delete this item?')){document.getElementById('del{{ $inv->id }}').submit();}return false;"><svg viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m2 0v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6"/></svg> Delete</a>
                                 <form id="del{{ $inv->id }}" method="POST" action="{{ route('inventory.destroy',$inv) }}" style="display:none">@csrf @method('DELETE')</form>
                             @endcan
@@ -114,7 +130,7 @@
             @endforelse
             </tbody>
         </table>
-        <div class="noresult" id="noresult">No items match your search.</div>
+        <div class="noresult" id="noresult">No items match this filter.</div>
     </div>
 
     <div class="legend">
@@ -125,6 +141,33 @@
     </div>
 </div>
 
+@can('admin')
+@foreach($inventories as $inv)
+<div class="modal-ov" id="adjM{{ $inv->id }}" hidden onclick="if(event.target===this)this.hidden=true;">
+    <div class="modal">
+        <div class="modal-h">Adjust Stock &mdash; <span>{{ $inv->item_name }}</span></div>
+        <form method="POST" action="{{ route('inventory.adjust', $inv) }}">
+            @csrf @method('PATCH')
+            <label>Type</label>
+            <select name="type" required>
+                <option value="adjustment">Add / Restock (+)</option>
+                <option value="used">Used (-)</option>
+                <option value="damaged">Mark Damaged (-)</option>
+            </select>
+            <label>Quantity ({{ $inv->unit }})</label>
+            <input type="number" name="quantity" step="0.01" min="0.01" required>
+            <label>Notes (optional)</label>
+            <input type="text" name="notes" placeholder="e.g. restock from market">
+            <div class="modal-act">
+                <button type="button" class="mbtn ghost" onclick="document.getElementById('adjM{{ $inv->id }}').hidden=true;">Cancel</button>
+                <button class="mbtn gold">Save</button>
+            </div>
+        </form>
+    </div>
+</div>
+@endforeach
+@endcan
+
 <script>
 var curFilter='all';
 function setFilter(btn){
@@ -133,17 +176,11 @@ function setFilter(btn){
     curFilter=btn.getAttribute('data-filter');
     document.querySelectorAll('.ikpi .hint').forEach(function(h){h.textContent='click to filter';});
     btn.querySelector('.hint').textContent = curFilter==='all'?'showing all':'filtered';
-    applyFilters();
-}
-function applyFilters(){
-    var term=(document.getElementById('search').value||'').toLowerCase().trim();
     var shown=0;
     document.querySelectorAll('.inv-card tbody tr').forEach(function(r){
         if(!r.getAttribute('data-tier')) return;
-        var t=r.getAttribute('data-tier'), d=r.getAttribute('data-dmg'), nm=r.getAttribute('data-name')||'';
-        var okFilter = curFilter==='all' || (curFilter==='low' && (t==='low'||t==='crit'||t==='out')) || (curFilter==='dmg' && d==='1');
-        var okName = nm.indexOf(term)!==-1;
-        var show = okFilter && okName;
+        var t=r.getAttribute('data-tier'), d=r.getAttribute('data-dmg');
+        var show = curFilter==='all' || (curFilter==='low' && (t==='low'||t==='crit'||t==='out')) || (curFilter==='dmg' && d==='1');
         r.style.display = show?'':'none'; if(show) shown++;
     });
     document.getElementById('noresult').style.display = shown===0?'block':'none';
@@ -153,3 +190,13 @@ function toggleMenu(e,btn){ e.stopPropagation(); var m=btn.nextElementSibling; v
 document.addEventListener('click', closeMenus);
 </script>
 </x-app-layout>
+'@
+[System.IO.File]::WriteAllText($p, $content, $Utf8NoBom)
+Write-Host "  wrote resources\views\inventory\index.blade.php" -ForegroundColor Green
+
+php artisan view:clear
+php artisan optimize:clear
+Write-Host ""
+Write-Host "DONE - the Adjust form action is now Blade-rendered per item." -ForegroundColor Cyan
+Write-Host "Open the Inventory with a fresh URL to dodge cache:" -ForegroundColor White
+Write-Host "   http://127.0.0.1:8000/inventory?v=3" -ForegroundColor Yellow

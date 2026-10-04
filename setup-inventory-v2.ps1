@@ -1,3 +1,19 @@
+# ============================================================
+#  TROVE - Inventory v2: search + color tiers + clickable KPI filters + hover kebab (View/Edit/Delete)
+#     powershell -ExecutionPolicy Bypass -File setup-inventory-v2.ps1
+# ============================================================
+$ErrorActionPreference = "Stop"
+$root = $PSScriptRoot
+if ([string]::IsNullOrEmpty($root)) { $root = Get-Location }
+if (-not (Test-Path (Join-Path $root "artisan"))) {
+    Write-Host "ERROR: run from your project root (where artisan is)." -ForegroundColor Red; exit 1
+}
+$Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+Write-Host "Building Inventory v2..." -ForegroundColor Yellow
+
+$p = Join-Path $root "resources\views\inventory\index.blade.php"
+New-Item -ItemType Directory -Force -Path (Split-Path $p) | Out-Null
+$content = @'
 <x-app-layout>
 <x-slot name="header">Inventory</x-slot>
 <x-slot name="subheader">Raw materials &amp; ingredients &mdash; Matina store</x-slot>
@@ -153,3 +169,14 @@ function toggleMenu(e,btn){ e.stopPropagation(); var m=btn.nextElementSibling; v
 document.addEventListener('click', closeMenus);
 </script>
 </x-app-layout>
+'@
+[System.IO.File]::WriteAllText($p, $content, $Utf8NoBom)
+Write-Host "  wrote resources\views\inventory\index.blade.php" -ForegroundColor Green
+
+php artisan view:clear
+php artisan optimize:clear
+Write-Host ""
+Write-Host "DONE - refresh Inventory (Ctrl+F5)." -ForegroundColor Cyan
+Write-Host "  - Search bar (by item name)" -ForegroundColor White
+Write-Host "  - Color tiers + clickable KPI filters" -ForegroundColor White
+Write-Host "  - Hover kebab: View / Edit / Delete" -ForegroundColor White
