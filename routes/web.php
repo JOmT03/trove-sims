@@ -1,7 +1,6 @@
 <?php
 use App\Http\Controllers\ProductController;
 use App\Http\Controllers\DashboardController;
-use App\Http\Controllers\DeliveryController;
 use App\Http\Controllers\InventoryController;
 use App\Http\Controllers\OrderController;
 use App\Http\Controllers\ProfileController;
@@ -27,13 +26,8 @@ Route::middleware(['auth', \App\Http\Middleware\EnsureActive::class])->group(fun
     });
     Route::get('/orders/{order}', [OrderController::class, 'show'])->name('orders.show');
 
-    // ── DELIVERIES ──
-    Route::get('/deliveries', [DeliveryController::class, 'index'])->name('deliveries.index');
     Route::middleware('admin')->group(function () {
-        Route::get('/deliveries/create', [DeliveryController::class, 'create'])->name('deliveries.create');
-        Route::post('/deliveries', [DeliveryController::class, 'store'])->name('deliveries.store');
     });
-    Route::get('/deliveries/{delivery}', [DeliveryController::class, 'show'])->name('deliveries.show');
 
 
     // ── INVENTORY ──
