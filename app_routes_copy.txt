@@ -1,0 +1,2887 @@
+===== app\Console\Commands\CheckUpcomingDeliveries.php =====
+<?php
+
+namespace App\Console\Commands;
+
+use Illuminate\Console\Command;
+
+class CheckUpcomingDeliveries extends Command
+{
+    /**
+     * The name and signature of the console command.
+     *
+     * @var string
+     */
+    protected $signature = 'app:check-upcoming-deliveries';
+
+    /**
+     * The console command description.
+     *
+     * @var string
+     */
+    protected $description = 'Command description';
+
+    /**
+     * Execute the console command.
+     */
+    public function handle()
+    {
+        //
+    }
+}
+
+
+===== app\Http\AppServiceProvider.php =====
+<?php
+
+namespace App\Providers;
+
+use Illuminate\Support\ServiceProvider;
+use Illuminate\Support\Facades\URL;
+use Illuminate\Support\Facades\Gate;
+
+class AppServiceProvider extends ServiceProvider
+{
+    /**
+     * Register any application services.
+     */
+    public function register(): void
+    {
+        //
+    }
+
+    /**
+     * Bootstrap any application services.
+     */
+    public function boot(): void
+    {
+        if (env('APP_ENV') === 'production') {
+            URL::forceScheme('https');
+        }
+
+        // Admin gate — Owner and Manager can manage products, inventory, etc.
+        // This makes @can('admin') work in Blade views.
+        Gate::define('admin', function ($user) {
+            return in_array($user->role, ['Owner', 'Manager']);
+        });
+    }
+}
+
+
+===== app\Http\Controllers\Auth\AuthenticatedSessionController.php =====
+<?php
+
+namespace App\Http\Controllers\Auth;
+
+use App\Http\Controllers\Controller;
+use App\Http\Requests\Auth\LoginRequest;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\View\View;
+
+class AuthenticatedSessionController extends Controller
+{
+    /**
+     * Display the login view.
+     */
+    public function create(): View
+    {
+        return view('auth.login');
+    }
+
+    /**
+     * Handle an incoming authentication request.
+     */
+    public function store(LoginRequest $request): RedirectResponse
+    {
+        $request->authenticate();
+
+        $request->session()->regenerate();
+
+        return redirect()->intended(route('dashboard', absolute: false));
+    }
+
+    /**
+     * Destroy an authenticated session.
+     */
+    public function destroy(Request $request): RedirectResponse
+    {
+        Auth::guard('web')->logout();
+
+        $request->session()->invalidate();
+
+        $request->session()->regenerateToken();
+
+        return redirect('/');
+    }
+}
+
+
+===== app\Http\Controllers\Auth\ConfirmablePasswordController.php =====
+<?php
+
+namespace App\Http\Controllers\Auth;
+
+use App\Http\Controllers\Controller;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Validation\ValidationException;
+use Illuminate\View\View;
+
+class ConfirmablePasswordController extends Controller
+{
+    /**
+     * Show the confirm password view.
+     */
+    public function show(): View
+    {
+        return view('auth.confirm-password');
+    }
+
+    /**
+     * Confirm the user's password.
+     */
+    public function store(Request $request): RedirectResponse
+    {
+        if (! Auth::guard('web')->validate([
+            'email' => $request->user()->email,
+            'password' => $request->password,
+        ])) {
+            throw ValidationException::withMessages([
+                'password' => __('auth.password'),
+            ]);
+        }
+
+        $request->session()->put('auth.password_confirmed_at', time());
+
+        return redirect()->intended(route('dashboard', absolute: false));
+    }
+}
+
+
+===== app\Http\Controllers\Auth\EmailVerificationNotificationController.php =====
+<?php
+
+namespace App\Http\Controllers\Auth;
+
+use App\Http\Controllers\Controller;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+
+class EmailVerificationNotificationController extends Controller
+{
+    /**
+     * Send a new email verification notification.
+     */
+    public function store(Request $request): RedirectResponse
+    {
+        if ($request->user()->hasVerifiedEmail()) {
+            return redirect()->intended(route('dashboard', absolute: false));
+        }
+
+        $request->user()->sendEmailVerificationNotification();
+
+        return back()->with('status', 'verification-link-sent');
+    }
+}
+
+
+===== app\Http\Controllers\Auth\EmailVerificationPromptController.php =====
+<?php
+
+namespace App\Http\Controllers\Auth;
+
+use App\Http\Controllers\Controller;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Illuminate\View\View;
+
+class EmailVerificationPromptController extends Controller
+{
+    /**
+     * Display the email verification prompt.
+     */
+    public function __invoke(Request $request): RedirectResponse|View
+    {
+        return $request->user()->hasVerifiedEmail()
+                    ? redirect()->intended(route('dashboard', absolute: false))
+                    : view('auth.verify-email');
+    }
+}
+
+
+===== app\Http\Controllers\Auth\NewPasswordController.php =====
+<?php
+
+namespace App\Http\Controllers\Auth;
+
+use App\Http\Controllers\Controller;
+use App\Models\User;
+use Illuminate\Auth\Events\PasswordReset;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Password;
+use Illuminate\Support\Str;
+use Illuminate\Validation\Rules;
+use Illuminate\Validation\ValidationException;
+use Illuminate\View\View;
+
+class NewPasswordController extends Controller
+{
+    /**
+     * Display the password reset view.
+     */
+    public function create(Request $request): View
+    {
+        return view('auth.reset-password', ['request' => $request]);
+    }
+
+    /**
+     * Handle an incoming new password request.
+     *
+     * @throws ValidationException
+     */
+    public function store(Request $request): RedirectResponse
+    {
+        $request->validate([
+            'token' => ['required'],
+            'email' => ['required', 'email'],
+            'password' => ['required', 'confirmed', Rules\Password::defaults()],
+        ]);
+
+        // Here we will attempt to reset the user's password. If it is successful we
+        // will update the password on an actual user model and persist it to the
+        // database. Otherwise we will parse the error and return the response.
+        $status = Password::reset(
+            $request->only('email', 'password', 'password_confirmation', 'token'),
+            function (User $user) use ($request) {
+                $user->forceFill([
+                    'password' => Hash::make($request->password),
+                    'remember_token' => Str::random(60),
+                ])->save();
+
+                event(new PasswordReset($user));
+            }
+        );
+
+        // If the password was successfully reset, we will redirect the user back to
+        // the application's home authenticated view. If there is an error we can
+        // redirect them back to where they came from with their error message.
+        return $status == Password::PASSWORD_RESET
+                    ? redirect()->route('login')->with('status', __($status))
+                    : back()->withInput($request->only('email'))
+                        ->withErrors(['email' => __($status)]);
+    }
+}
+
+
+===== app\Http\Controllers\Auth\PasswordController.php =====
+<?php
+
+namespace App\Http\Controllers\Auth;
+
+use App\Http\Controllers\Controller;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Validation\Rules\Password;
+
+class PasswordController extends Controller
+{
+    /**
+     * Update the user's password.
+     */
+    public function update(Request $request): RedirectResponse
+    {
+        $validated = $request->validateWithBag('updatePassword', [
+            'current_password' => ['required', 'current_password'],
+            'password' => ['required', Password::defaults(), 'confirmed'],
+        ]);
+
+        $request->user()->update([
+            'password' => Hash::make($validated['password']),
+        ]);
+
+        return back()->with('status', 'password-updated');
+    }
+}
+
+
+===== app\Http\Controllers\Auth\PasswordResetLinkController.php =====
+<?php
+
+namespace App\Http\Controllers\Auth;
+
+use App\Http\Controllers\Controller;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Password;
+use Illuminate\Validation\ValidationException;
+use Illuminate\View\View;
+
+class PasswordResetLinkController extends Controller
+{
+    /**
+     * Display the password reset link request view.
+     */
+    public function create(): View
+    {
+        return view('auth.forgot-password');
+    }
+
+    /**
+     * Handle an incoming password reset link request.
+     *
+     * @throws ValidationException
+     */
+    public function store(Request $request): RedirectResponse
+    {
+        $request->validate([
+            'email' => ['required', 'email'],
+        ]);
+
+        // We will send the password reset link to this user. Once we have attempted
+        // to send the link, we will examine the response then see the message we
+        // need to show to the user. Finally, we'll send out a proper response.
+        $status = Password::sendResetLink(
+            $request->only('email')
+        );
+
+        return $status == Password::RESET_LINK_SENT
+                    ? back()->with('status', __($status))
+                    : back()->withInput($request->only('email'))
+                        ->withErrors(['email' => __($status)]);
+    }
+}
+
+
+===== app\Http\Controllers\Auth\RegisteredUserController.php =====
+<?php
+
+namespace App\Http\Controllers\Auth;
+
+use App\Http\Controllers\Controller;
+use App\Models\User;
+use Illuminate\Auth\Events\Registered;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\View\View;
+
+class RegisteredUserController extends Controller
+{
+    public function create(): View
+    {
+        return view('auth.register');
+    }
+
+   public function store(Request $request): RedirectResponse
+{
+    $validated = $request->validate([
+        'name'     => 'required|string|max:255',
+        'email'    => 'required|string|email|max:255|unique:users',
+        'password' => 'required|confirmed|min:8',
+    ]);
+
+    // Split the single "Full Name" field into first/last, since that's
+    // how the users table is actually structured
+    $nameParts = explode(' ', trim($validated['name']), 2);
+    $firstName = $nameParts[0];
+    $lastName  = $nameParts[1] ?? '';
+
+    $user = User::create([
+        'first_name' => $firstName,
+        'last_name'  => $lastName,
+        'email'      => $validated['email'],
+        'password'   => Hash::make($validated['password']),
+        'role'       => 'Staff',
+    ]);
+
+    event(new Registered($user));
+    Auth::login($user);
+
+    return redirect()->route('dashboard');
+}
+}
+
+===== app\Http\Controllers\Auth\VerifyEmailController.php =====
+<?php
+
+namespace App\Http\Controllers\Auth;
+
+use App\Http\Controllers\Controller;
+use Illuminate\Auth\Events\Verified;
+use Illuminate\Foundation\Auth\EmailVerificationRequest;
+use Illuminate\Http\RedirectResponse;
+
+class VerifyEmailController extends Controller
+{
+    /**
+     * Mark the authenticated user's email address as verified.
+     */
+    public function __invoke(EmailVerificationRequest $request): RedirectResponse
+    {
+        if ($request->user()->hasVerifiedEmail()) {
+            return redirect()->intended(route('dashboard', absolute: false).'?verified=1');
+        }
+
+        if ($request->user()->markEmailAsVerified()) {
+            event(new Verified($request->user()));
+        }
+
+        return redirect()->intended(route('dashboard', absolute: false).'?verified=1');
+    }
+}
+
+
+===== app\Http\Controllers\BranchTransferController.php =====
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\Batch;
+use App\Models\BatchItem;
+use App\Models\Product;
+use App\Models\Site;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+
+class BranchTransferController extends Controller
+{
+    public function index()
+    {
+        $batches = Batch::with(['items', 'sourceSite', 'destinationSite'])
+            ->orderBy('batch_date', 'desc')
+            ->get();
+
+        return view('branch-transfers.index', compact('batches'));
+    }
+
+    public function create()
+    {
+        $sites = Site::orderBy('site_name')->get();
+        $products = Product::where('status', 'active')->orderBy('product_name')->get();
+
+        return view('branch-transfers.create', compact('sites', 'products'));
+    }
+
+    public function store(Request $request)
+    {
+        $validated = $request->validate([
+            'source_site_id'      => 'nullable|exists:sites,id',
+            'destination_site_id' => 'nullable|exists:sites,id',
+            'batch_date'          => 'required|date',
+            'items'               => 'required|array|min:1',
+            'items.*.product_id'  => 'required|exists:products,id',
+            'items.*.qty_sent'    => 'required|integer|min:1',
+            'items.*.unit_price'  => 'required|numeric|min:0',
+        ]);
+
+        try {
+            DB::beginTransaction();
+
+            // 1) Check stock FIRST so we never dispatch more than is on hand
+            foreach ($validated['items'] as $item) {
+                $product = Product::findOrFail($item['product_id']);
+                if ($item['qty_sent'] > $product->stock_quantity) {
+                    throw new \Exception(
+                        "Not enough {$product->product_name}: only {$product->stock_quantity} on hand, but you tried to dispatch {$item['qty_sent']}."
+                    );
+                }
+            }
+
+            // 2) Create the batch and its items, deducting finished stock
+            $batch = Batch::create([
+                'source_site_id'      => $validated['source_site_id'] ?? null,
+                'destination_site_id' => $validated['destination_site_id'] ?? null,
+                'batch_date'          => $validated['batch_date'],
+                'status'              => 'sent',
+                'created_by'          => auth()->id(),
+            ]);
+
+            foreach ($validated['items'] as $item) {
+                BatchItem::create([
+                    'batch_id'     => $batch->id,
+                    'product_id'   => $item['product_id'],
+                    'qty_sent'     => $item['qty_sent'],
+                    'qty_returned' => 0,
+                    'unit_price'   => $item['unit_price'],
+                ]);
+
+                // finished goods leave Matina
+                Product::where('id', $item['product_id'])->decrement('stock_quantity', $item['qty_sent']);
+            }
+
+            DB::commit();
+
+            return redirect()->route('branch-transfers.show', $batch)
+                ->with('success', 'Batch dispatched and stock updated. Log returns here once Jacinto reports unsold items.');
+        } catch (\Exception $e) {
+            DB::rollBack();
+            \Log::error('Batch dispatch failed: ' . $e->getMessage());
+            return back()->withInput()->with('error', $e->getMessage());
+        }
+    }
+
+    public function show(Batch $batch)
+    {
+        $batch->load(['items.product', 'sourceSite', 'destinationSite', 'creator']);
+        return view('branch-transfers.show', compact('batch'));
+    }
+
+    public function logReturns(Request $request, Batch $batch)
+    {
+        $validated = $request->validate([
+            'returns'   => 'required|array',
+            'returns.*' => 'nullable|integer|min:0',
+        ]);
+
+        try {
+            DB::beginTransaction();
+
+            foreach ($batch->items as $item) {
+                $newReturned = (int) ($validated['returns'][$item->id] ?? 0);
+                $newReturned = min($newReturned, $item->qty_sent); // can't return more than sent
+
+                // how much MORE is coming back vs. what was already logged
+                $delta = $newReturned - $item->qty_returned;
+
+                $item->update(['qty_returned' => $newReturned]);
+
+                // returned items come back to Matina's finished stock
+                if ($delta !== 0 && $item->product_id) {
+                    Product::where('id', $item->product_id)->increment('stock_quantity', $delta);
+                }
+            }
+
+            $batch->update(['status' => 'reconciled']);
+
+            DB::commit();
+
+            return redirect()->route('branch-transfers.show', $batch)
+                ->with('success', 'Returns logged. Net Sold recalculated and returned stock restored to Matina.');
+        } catch (\Exception $e) {
+            DB::rollBack();
+            \Log::error('Logging returns failed: ' . $e->getMessage());
+            return back()->with('error', 'Failed to log returns: ' . $e->getMessage());
+        }
+    }
+}
+
+===== app\Http\Controllers\CommissionController.php =====
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\Commission;
+use App\Models\OrderItem;
+use App\Models\Product;
+use App\Models\Site;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+
+class CommissionController extends Controller
+{
+    public function index(Request $request)
+    {
+        $type = $request->input('type', 'all'); // all | individual | institutional
+
+        $query = Commission::with('items.product')->orderBy('created_at', 'desc');
+        if (in_array($type, ['individual', 'institutional'])) {
+            $query->where('client_type', $type);
+        }
+        $commissions = $query->get();
+
+        $counts = [
+            'all'           => Commission::count(),
+            'individual'    => Commission::where('client_type', 'individual')->count(),
+            'institutional' => Commission::where('client_type', 'institutional')->count(),
+        ];
+
+        return view('commissions.index', compact('commissions', 'type', 'counts'));
+    }
+
+    public function create()
+    {
+        $products = Product::where('status', 'active')->orderBy('product_name')->get();
+        $sites    = Site::orderBy('site_name')->get();
+        return view('commissions.create', compact('products', 'sites'));
+    }
+
+    public function store(Request $request)
+    {
+        $validated = $request->validate([
+            'customer_name'      => 'required|string|max:255',
+            'client_type'        => 'required|in:individual,institutional',
+            'order_type'         => 'nullable|string|max:255',
+            'needed_by_date'     => 'nullable|date',
+            'deposit_amount'     => 'nullable|numeric|min:0',
+            'design_description' => 'nullable|string',
+            'site_id'            => 'nullable|exists:sites,id',
+            'items'              => 'required|array|min:1',
+            'items.*.product_id' => 'required|exists:products,id',
+            'items.*.quantity'   => 'required|integer|min:1',
+            'items.*.price'      => 'required|numeric|min:0',
+        ]);
+
+        try {
+            DB::beginTransaction();
+
+            $total = 0;
+            foreach ($validated['items'] as $it) {
+                $total += $it['quantity'] * $it['price'];
+            }
+            $deposit = $validated['deposit_amount'] ?? 0;
+
+            $commission = Commission::create([
+                'user_id'            => auth()->id(),
+                'site_id'            => $validated['site_id'] ?? null,
+                'customer_name'      => $validated['customer_name'],
+                'client_type'        => $validated['client_type'],
+                'order_type'         => $validated['order_type'] ?? null,
+                'design_description' => $validated['design_description'] ?? null,
+                'needed_by_date'     => $validated['needed_by_date'] ?? null,
+                'total_amount'       => $total,
+                'deposit_amount'     => $deposit,
+                'status'             => $deposit > 0 ? 'Confirmed' : 'Inquiry',
+            ]);
+
+            foreach ($validated['items'] as $it) {
+                OrderItem::create([
+                    'order_id'   => $commission->id,
+                    'product_id' => $it['product_id'],
+                    'quantity'   => $it['quantity'],
+                    'price'      => $it['price'],
+                ]);
+            }
+
+            DB::commit();
+
+            return redirect()->route('commissions.show', $commission)
+                ->with('success', 'Commission created successfully.');
+        } catch (\Exception $e) {
+            DB::rollBack();
+            \Log::error('Commission create failed: ' . $e->getMessage());
+            return back()->withInput()->with('error', 'Failed to save commission: ' . $e->getMessage());
+        }
+    }
+
+    public function show(Commission $commission)
+    {
+        $commission->load(['items.product', 'site']);
+        return view('commissions.show', compact('commission'));
+    }
+
+    public function updateStatus(Request $request, Commission $commission)
+    {
+        $validated = $request->validate([
+            'status' => 'required|in:' . implode(',', Commission::STAGES),
+        ]);
+        $commission->update(['status' => $validated['status']]);
+
+        return back()->with('success', 'Status updated to ' . $validated['status'] . '.');
+    }
+}
+
+===== app\Http\Controllers\Controller.php =====
+<?php
+
+namespace App\Http\Controllers;
+
+abstract class Controller
+{
+    //
+}
+
+
+===== app\Http\Controllers\DashboardController.php =====
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\Batch;
+use App\Models\Inventory;
+use App\Models\InventoryLog;
+use App\Models\Product;
+use Illuminate\Support\Carbon;
+
+class DashboardController extends Controller
+{
+    public function index()
+    {
+        //  This week's batches (Mon-Sun) 
+        $weekStart = Carbon::now()->startOfWeek()->toDateString();
+        $weekEnd   = Carbon::now()->endOfWeek()->toDateString();
+
+        $weekBatches = Batch::with('items')
+            ->whereBetween('batch_date', [$weekStart, $weekEnd])
+            ->get();
+
+        $batchSent      = $weekBatches->sum(fn ($b) => $b->totalSent());
+        $returnedQty    = $weekBatches->sum(fn ($b) => $b->totalReturned());
+        $netSoldQty     = $weekBatches->sum(fn ($b) => $b->totalNetSold());
+        $netSoldRevenue = $weekBatches->sum(fn ($b) => $b->totalRevenue());
+
+        //  Inventory (raw materials) 
+        $inventories = Inventory::orderBy('item_name')->get();
+        $lowCount    = $inventories->filter(fn ($i) => $i->isLowStock())->count();
+
+        // lowest-stock first, show up to 6
+        $stockLevels = $inventories
+            ->sortBy(fn ($i) => $i->minimum_stock > 0 ? $i->usableQuantity() / $i->minimum_stock : 999)
+            ->take(6)
+            ->values();
+
+        //  Finished products 
+        $finishedStock = (int) Product::sum('stock_quantity');
+        $totalProducts = Product::count();
+
+        //  Latest batch (for reconciliation card) 
+        $latestBatch = Batch::with(['items.product', 'sourceSite', 'destinationSite'])
+            ->orderBy('batch_date', 'desc')
+            ->orderBy('id', 'desc')
+            ->first();
+
+        //  Can Still Bake (limiting-ingredient math from recipes) 
+        $canBake = [];
+        foreach (Product::with('materials')->where('status', 'active')->get() as $product) {
+            if ($product->materials->isEmpty()) {
+                continue;
+            }
+            $caps = [];
+            foreach ($product->materials as $mat) {
+                $need = (float) $mat->pivot->quantity_used;
+                if ($need > 0) {
+                    $caps[] = (int) floor($mat->quantity_on_hand / $need);
+                }
+            }
+            if (! empty($caps)) {
+                $canBake[$product->product_name] = min($caps);
+            }
+        }
+        arsort($canBake);
+        $canBake = array_slice($canBake, 0, 5, true);
+        $maxBake = ! empty($canBake) ? max(array_values($canBake)) : 0;
+
+        //  Recent stock movements (ingredient audit trail) 
+        $movements = InventoryLog::with('inventory')
+            ->orderBy('created_at', 'desc')
+            ->take(6)
+            ->get();
+
+        return view('dashboard', compact(
+            'batchSent', 'returnedQty', 'netSoldQty', 'netSoldRevenue',
+            'lowCount', 'stockLevels', 'finishedStock', 'totalProducts',
+            'latestBatch', 'canBake', 'maxBake', 'movements'
+        ));
+    }
+}
+
+===== app\Http\Controllers\DeliveryController.php =====
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\Delivery;
+use App\Models\DeliveryItem;
+use App\Models\Inventory;
+use App\Models\Order;
+use Illuminate\Http\Request;
+
+class DeliveryController extends Controller
+{
+    public function index()
+    {
+        $deliveries = Delivery::with('order.supplier')->latest()->get();
+        return view('deliveries.index', compact('deliveries'));
+    }
+
+    public function create(Request $request)
+    {
+        // Show confirmed, shipped, OR delivered orders
+        // (delivered is included so you can still record if the status jumped ahead)
+        $orders = Order::with('supplier', 'items')
+            ->whereIn('status', ['confirmed', 'shipped', 'delivered'])
+            ->latest()
+            ->get();
+
+        $selectedOrder = null;
+        if ($request->order_id) {
+            $selectedOrder = Order::with('supplier', 'items')->find($request->order_id);
+        }
+
+        return view('deliveries.create', compact('orders', 'selectedOrder'));
+    }
+
+    public function store(Request $request)
+    {
+        $request->validate([
+            'order_id'                   => 'required|exists:orders,id',
+            'delivered_at'               => 'required|date',
+            'received_by'                => 'required|string|max:255',
+            'notes'                      => 'nullable|string',
+            'items'                      => 'required|array|min:1',
+            'items.*.item_name'          => 'required|string',
+            'items.*.category'           => 'required|string',
+            'items.*.unit'               => 'required|string',
+            'items.*.quantity_ordered'   => 'required|numeric|min:0',
+            'items.*.quantity_delivered' => 'required|numeric|min:0',
+            'items.*.quantity_damaged'   => 'nullable|numeric|min:0',
+            'items.*.condition'          => 'required|in:good,partial_damage,all_damaged',
+            'items.*.damage_notes'       => 'nullable|string',
+        ]);
+
+        $count          = Delivery::count() + 1;
+        $deliveryNumber = 'DEL-' . now()->year . '-' . str_pad($count, 4, '0', STR_PAD_LEFT);
+
+        $order = Order::findOrFail($request->order_id);
+
+        $delivery = Delivery::create([
+            'delivery_number' => $deliveryNumber,
+            'order_id'        => $request->order_id,
+            'supplier_id'     => $order->supplier_id,
+            'delivered_at'    => $request->delivered_at,
+            'received_by'     => $request->received_by,
+            'notes'           => $request->notes,
+            'status'          => 'received',
+        ]);
+
+        foreach ($request->items as $item) {
+            $delivery->items()->create([
+                'order_item_id'      => $item['order_item_id'],
+                'item_name'          => $item['item_name'],
+                'category'           => $item['category'],
+                'unit'               => $item['unit'],
+                'quantity_ordered'   => $item['quantity_ordered'],
+                'quantity_delivered' => $item['quantity_delivered'],
+                'quantity_damaged'   => $item['quantity_damaged'] ?? 0,
+                'condition'          => $item['condition'],
+                'damage_notes'       => $item['damage_notes'] ?? null,
+            ]);
+
+            // Update or create inventory record
+            $inv = Inventory::firstOrCreate(
+                [
+                    'item_name' => $item['item_name'],
+                    'category'  => $item['category'],
+                ],
+                [
+                    'unit'             => $item['unit'],
+                    'quantity_on_hand' => 0,
+                    'quantity_damaged' => 0,
+                    'minimum_stock'    => 0,
+                ]
+            );
+            $inv->increment('quantity_on_hand', $item['quantity_delivered']);
+            if (!empty($item['quantity_damaged'])) {
+                $inv->increment('quantity_damaged', $item['quantity_damaged']);
+            }
+        }
+
+        // Mark order as delivered
+        Order::find($request->order_id)->update(['status' => 'delivered']);
+
+        return redirect()->route('deliveries.show', $delivery)
+            ->with('success', 'Delivery ' . $deliveryNumber . ' recorded and inventory updated.');
+    }
+
+    public function show(Delivery $delivery)
+    {
+        $delivery->load('order.supplier', 'items');
+        return view('deliveries.show', compact('delivery'));
+    }
+}
+
+===== app\Http\Controllers\ExpenseController.php =====
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\Expense;
+use App\Models\Inventory;
+use Illuminate\Http\Request;
+
+class ExpenseController extends Controller
+{
+    public function index()
+    {
+        $expenses = Expense::with('inventoryItem')->latest('expense_date')->get();
+        $inventoryItems = Inventory::all();
+
+        return view('expenses.index', compact('expenses', 'inventoryItems'));
+    }
+
+    public function store(Request $request)
+    {
+        $validated = $request->validate([
+            'expense_date' => 'required|date',
+            'category'     => 'required|string|max:50',
+            'description'  => 'required|string|max:255',
+            'amount'       => 'required|numeric|min:0',
+            'inventory_id' => 'nullable|exists:inventory,id',
+            'quantity'     => 'nullable|integer|min:1',
+        ]);
+
+        $validated['created_by'] = auth()->id();
+
+        Expense::create($validated);
+
+        return redirect()->route('expenses.index')->with('success', 'Expense recorded successfully!');
+    }
+
+    public function destroy(Expense $expense)
+    {
+        $expense->delete();
+
+        return redirect()->route('expenses.index')->with('success', 'Expense deleted successfully!');
+    }
+}
+
+===== app\Http\Controllers\InventoryController.php =====
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\Inventory;
+use App\Models\InventoryLog;
+use App\Models\Site;
+use Illuminate\Http\Request;
+
+class InventoryController extends Controller
+{
+    public function index(Request $request)
+    {
+        $view = $request->get('view') === 'archived' ? 'archived' : 'active';
+
+        $base = Inventory::query();
+        if ($request->search) {
+            $base->where('item_name', 'like', '%' . $request->search . '%');
+        }
+
+        $activeCount   = (clone $base)->whereNull('archived_at')->count();
+        $archivedCount = (clone $base)->whereNotNull('archived_at')->count();
+
+        $q = clone $base;
+        if ($view === 'archived') { $q->whereNotNull('archived_at'); }
+        else { $q->whereNull('archived_at'); }
+
+        $inventories = $q->latest()->get();
+        $lowStock = $inventories->filter(fn($i) => $i->isLowStock())->count();
+        $damaged  = $inventories->sum('quantity_damaged');
+
+        return view('inventory.index', compact('inventories', 'lowStock', 'damaged', 'view', 'activeCount', 'archivedCount'));
+    }
+
+    public function create()
+    {
+        $sites = Site::orderBy('site_name')->get();
+        $categories = ['Baking Essentials', 'Dairy & Eggs', 'Flavoring & Fillings', 'Packaging', 'Coffee & Beverage', 'Other'];
+        $units = ['g', 'kg', 'ml', 'liters', 'pcs', 'dozen', 'pack'];
+        return view('inventory.create', compact('sites', 'categories', 'units'));
+    }
+
+    public function store(Request $request)
+    {
+        $validated = $request->validate([
+            'item_name'        => 'required|string|max:255',
+            'category'         => 'required|string|max:255',
+            'unit'             => 'required|string|max:50',
+            'quantity_on_hand' => 'required|numeric|min:0',
+            'quantity_damaged' => 'nullable|numeric|min:0',
+            'minimum_stock'    => 'required|numeric|min:0',
+            'site_id'          => 'nullable|exists:sites,id',
+            'notes'            => 'nullable|string',
+        ]);
+
+        $inventory = Inventory::create([
+            'item_name'        => $validated['item_name'],
+            'category'         => $validated['category'],
+            'unit'             => $validated['unit'],
+            'quantity_on_hand' => $validated['quantity_on_hand'],
+            'quantity_damaged' => $validated['quantity_damaged'] ?? 0,
+            'minimum_stock'    => $validated['minimum_stock'],
+            'site_id'          => $validated['site_id'] ?? null,
+            'notes'            => $validated['notes'] ?? null,
+        ]);
+
+        InventoryLog::create([
+            'inventory_id' => $inventory->id,
+            'type'         => 'adjustment',
+            'quantity'     => $inventory->quantity_on_hand,
+            'ref_note'     => 'INITIAL-STOCK',
+            'notes'        => 'Initial inventory record created',
+            'user_id'      => auth()->id(),
+        ]);
+
+        return redirect()->route('inventory.index')->with('success', 'Inventory item added successfully.');
+    }
+
+    public function show(Inventory $inventory)
+    {
+        $inventory->load(['site', 'logs.user']);
+        return view('inventory.show', compact('inventory'));
+    }
+
+    public function adjust(Request $request, Inventory $inventory)
+    {
+        $validated = $request->validate([
+            'type'     => 'required|in:used,damaged,adjustment',
+            'quantity' => 'required|numeric|min:0.01',
+            'notes'    => 'nullable|string',
+        ]);
+
+        if ($validated['type'] === 'used') {
+            $inventory->decrement('quantity_on_hand', $validated['quantity']);
+        } elseif ($validated['type'] === 'damaged') {
+            $inventory->decrement('quantity_on_hand', $validated['quantity']);
+            $inventory->increment('quantity_damaged', $validated['quantity']);
+        } else {
+            $inventory->increment('quantity_on_hand', $validated['quantity']);
+        }
+
+        InventoryLog::create([
+            'inventory_id' => $inventory->id,
+            'type'         => $validated['type'],
+            'quantity'     => $validated['quantity'],
+            'notes'        => $validated['notes'] ?? null,
+            'user_id'      => auth()->id(),
+        ]);
+
+        return back()->with('success', 'Inventory adjusted successfully.');
+    }
+
+    public function edit(Inventory $inventory)
+    {
+        $sites = Site::orderBy('site_name')->get();
+        $categories = ['Baking Essentials', 'Dairy & Eggs', 'Flavoring & Fillings', 'Packaging', 'Coffee & Beverage', 'Other'];
+        $units = ['g', 'kg', 'ml', 'liters', 'pcs', 'dozen', 'pack'];
+        return view('inventory.edit', compact('inventory', 'sites', 'categories', 'units'));
+    }
+
+    public function update(Request $request, Inventory $inventory)
+    {
+        $validated = $request->validate([
+            'item_name'     => 'required|string|max:255',
+            'category'      => 'required|string|max:255',
+            'unit'          => 'required|string|max:50',
+            'minimum_stock' => 'required|numeric|min:0',
+            'site_id'       => 'nullable|exists:sites,id',
+        ]);
+
+        $inventory->update($validated);
+
+        return redirect()->route('inventory.index')->with('success', 'Item updated successfully.');
+    }
+
+    public function archive(Inventory $inventory)
+    {
+        $inventory->archived_at = now();
+        $inventory->save();
+        return redirect()->route('inventory.index')->with('success', $inventory->item_name . ' archived.');
+    }
+
+    public function restore(Inventory $inventory)
+    {
+        $inventory->archived_at = null;
+        $inventory->save();
+        return redirect()->route('inventory.index', ['view' => 'archived'])->with('success', $inventory->item_name . ' restored.');
+    }
+
+    public function destroy(Inventory $inventory)
+    {
+        if (auth()->user()->role !== 'Owner') {
+            return back()->with('error', 'Only the Owner can permanently delete records.');
+        }
+        $inventory->delete();
+        return redirect()->route('inventory.index', ['view' => 'archived'])->with('success', 'Item permanently deleted.');
+    }
+}
+
+===== app\Http\Controllers\OrderController.php =====
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\Order;
+use App\Models\Product;
+use App\Models\Site;
+use Illuminate\Http\Request;
+
+class OrderController extends Controller
+{
+    public function index()
+    {
+        $orders = Order::with('site', 'items', 'user')->latest()->get();
+        return view('orders.index', compact('orders'));
+    }
+
+    public function create()
+    {
+        $products = Product::orderBy('product_name')->get();
+        $sites    = Site::orderBy('site_name')->get();
+        return view('orders.create', compact('products', 'sites'));
+    }
+
+    public function store(Request $request)
+    {
+        $validated = $request->validate([
+            'site_id'            => 'required|exists:sites,id',
+            'customer_name'      => 'nullable|string|max:100',
+            'order_type'         => 'required|in:Walk-in,Customized,Institutional',
+            'design_description' => 'required_if:order_type,Customized|nullable|string',
+            'needed_by_date'     => 'required_if:order_type,Customized|nullable|date',
+            'deposit_amount'     => 'nullable|numeric|min:0',
+            'items'              => 'required|array|min:1',
+            'items.*.product_id' => 'required|exists:products,id',
+            'items.*.quantity'   => 'required|integer|min:1',
+        ]);
+
+        $total = 0;
+        $lineItems = [];
+
+        foreach ($validated['items'] as $item) {
+            $product = Product::findOrFail($item['product_id']);
+            $lineTotal = $product->price * $item['quantity'];
+            $total += $lineTotal;
+
+            $lineItems[] = [
+                'product_id' => $product->id,
+                'quantity'   => $item['quantity'],
+                'price'      => $product->price,
+            ];
+        }
+
+        $order = Order::create([
+            'user_id'            => auth()->id(),
+            'site_id'            => $validated['site_id'],
+            'customer_name'      => $validated['customer_name'] ?? 'Walk-in',
+            'order_type'         => $validated['order_type'],
+            'design_description' => $validated['design_description'] ?? null,
+            'needed_by_date'     => $validated['needed_by_date'] ?? null,
+            'total_amount'       => $total,
+            'deposit_amount'     => $validated['deposit_amount'] ?? 0,
+            'status'             => 'Pending',
+        ]);
+
+        foreach ($lineItems as $line) {
+            $order->items()->create($line);
+
+            // Deduct from the product's own finished-goods stock.
+            // NOTE: this only deducts at the Product level for now.
+            // Raw-material-level deduction (per recipe) is a planned
+            // follow-up once Inventory and RawMaterial are unified.
+            Product::where('id', $line['product_id'])
+                ->decrement('stock_quantity', $line['quantity']);
+        }
+
+        return redirect()->route('orders.show', $order)
+            ->with('success', 'Order placed successfully.');
+    }
+
+    public function show(Order $order)
+    {
+        $order->load('site', 'items.product', 'user');
+        return view('orders.show', compact('order'));
+    }
+
+    public function destroy(Order $order)
+    {
+        if ($order->status !== 'Pending') {
+            return back()->with('error', 'Only pending orders can be cancelled.');
+        }
+        $order->items()->delete();
+        $order->delete();
+        return redirect()->route('orders.index')->with('success', 'Order cancelled.');
+    }
+    public function updateStatus(Request $request, Order $order)
+{
+    $request->validate(['status' => 'required|in:Pending,In Production,Ready,Completed']);
+    $order->update(['status' => $request->status]);
+    return back()->with('success', 'Order status updated.');
+}
+}
+
+===== app\Http\Controllers\ProductController.php =====
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\Product;
+use App\Models\Inventory;
+use App\Models\InventoryLog;
+use App\Models\Site;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
+
+class ProductController extends Controller
+{
+    public function index()
+    {
+        $products = Product::with('materials')->orderBy('created_at', 'desc')->get();
+        return view('products.index', compact('products'));
+    }
+
+    public function create()
+    {
+        $inventoryItems = Inventory::orderBy('item_name')->get();
+        $sites = Site::all();
+        return view('products.create', compact('inventoryItems', 'sites'));
+    }
+
+    public function store(Request $request)
+    {
+        try {
+            $validated = $request->validate([
+                'product_name'  => 'required|string|max:255|unique:products',
+                'description'   => 'nullable|string|max:1000',
+                'category'      => 'nullable|string|max:255',
+                'price'         => 'required|numeric|min:0',
+                'stock_quantity' => 'nullable|numeric|min:0',
+                'site_id'       => 'nullable|exists:sites,id',
+                'image'         => 'nullable|image|max:2048',
+                'recipe'        => 'nullable|array',
+                'recipe.*.inventory_id' => 'numeric|exists:inventory,id',
+                'recipe.*.quantity_needed' => 'numeric|min:0.01',
+            ]);
+
+            DB::beginTransaction();
+
+            $imagePath = null;
+            if ($request->hasFile('image')) {
+                $imagePath = $request->file('image')->store('products', 'public');
+            }
+
+            $product = Product::create([
+                'product_name'   => $validated['product_name'],
+                'description'    => $validated['description'] ?? null,
+                'category'       => $validated['category'] ?? null,
+                'price'          => $validated['price'],
+                'stock_quantity' => $validated['stock_quantity'] ?? 0,
+                'site_id'        => $validated['site_id'] ?? null,
+                'status'         => 'active',
+                'image_path'     => $imagePath,
+            ]);
+
+            if (! empty($validated['recipe'])) {
+                $materials = [];
+                foreach ($validated['recipe'] as $recipe_item) {
+                    if (empty($recipe_item['inventory_id'])) continue;
+
+                    $inventory_id    = $recipe_item['inventory_id'];
+                    $quantity_needed = $recipe_item['quantity_needed'];
+                    $inventory = Inventory::findOrFail($inventory_id);
+
+                    if ($inventory->quantity_on_hand < $quantity_needed) {
+                        throw new \Exception(
+                            "Insufficient {$inventory->item_name}. Available: {$inventory->quantity_on_hand}, Needed: {$quantity_needed}"
+                        );
+                    }
+
+                    $inventory->update([
+                        'quantity_on_hand' => $inventory->quantity_on_hand - $quantity_needed
+                    ]);
+
+                    InventoryLog::create([
+                        'inventory_id' => $inventory_id,
+                        'type'         => 'used',
+                        'quantity'     => $quantity_needed,
+                        'reference'    => 'PRODUCT-CREATE',
+                        'notes'        => "Material used for product: {$product->product_name}",
+                        'user_id'      => auth()->id(),
+                    ]);
+
+                    $materials[$inventory_id] = ['quantity_used' => $quantity_needed];
+                }
+
+                if (! empty($materials)) {
+                    $product->materials()->attach($materials);
+                }
+            }
+
+            DB::commit();
+
+            return redirect()->route('products.index')
+                ->with('success', "Product '{$product->product_name}' created successfully! Materials have been deducted from inventory.");
+        } catch (\Exception $e) {
+            DB::rollBack();
+            \Log::error('Product creation failed: ' . $e->getMessage());
+            return back()->withInput()
+                ->with('error', 'Failed to create product: ' . $e->getMessage());
+        }
+    }
+
+    public function show(Product $product)
+    {
+        $product->load('materials');
+        return view('products.show', compact('product'));
+    }
+
+    public function edit(Product $product)
+    {
+        $inventoryItems = Inventory::orderBy('item_name')->get();
+        $sites = Site::all();
+        $product->load('materials');
+        return view('products.edit', compact('product', 'inventoryItems', 'sites'));
+    }
+
+    public function update(Request $request, Product $product)
+    {
+        try {
+            $validated = $request->validate([
+                'product_name'  => 'required|string|max:255|unique:products,product_name,' . $product->id,
+                'description'   => 'nullable|string|max:1000',
+                'category'      => 'nullable|string|max:255',
+                'price'         => 'required|numeric|min:0',
+                'site_id'       => 'nullable|exists:sites,id',
+                'status'        => 'nullable|in:active,inactive',
+                'image'         => 'nullable|image|max:2048',
+            ]);
+
+            if ($request->hasFile('image')) {
+                if ($product->image_path && Storage::disk('public')->exists($product->image_path)) {
+                    Storage::disk('public')->delete($product->image_path);
+                }
+                $validated['image_path'] = $request->file('image')->store('products', 'public');
+            }
+
+            unset($validated['image']);
+            $product->update($validated);
+
+            return redirect()->route('products.index')
+                ->with('success', 'Product updated successfully.');
+        } catch (\Exception $e) {
+            \Log::error('Product update failed: ' . $e->getMessage());
+            return back()->withInput()
+                ->with('error', 'Failed to update product. Please try again.');
+        }
+    }
+
+    public function destroy(Product $product)
+    {
+        try {
+            if ($product->image_path && Storage::disk('public')->exists($product->image_path)) {
+                Storage::disk('public')->delete($product->image_path);
+            }
+            $product->delete();
+            return redirect()->route('products.index')
+                ->with('success', 'Product deleted successfully.');
+        } catch (\Exception $e) {
+            \Log::error('Product deletion failed: ' . $e->getMessage());
+            return back()->with('error', 'Failed to delete product. Please try again.');
+        }
+    }
+}
+
+===== app\Http\Controllers\ProfileController.php =====
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Http\Requests\ProfileUpdateRequest;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Redirect;
+use Illuminate\View\View;
+
+class ProfileController extends Controller
+{
+    /**
+     * Display the user's profile form.
+     */
+    public function edit(Request $request): View
+    {
+        return view('profile.edit', [
+            'user' => $request->user(),
+        ]);
+    }
+
+    /**
+     * Update the user's profile information.
+     */
+    public function update(ProfileUpdateRequest $request): RedirectResponse
+    {
+        $request->user()->fill($request->validated());
+
+        if ($request->user()->isDirty('email')) {
+            $request->user()->email_verified_at = null;
+        }
+
+        $request->user()->save();
+
+        return Redirect::route('profile.edit')->with('status', 'profile-updated');
+    }
+
+    /**
+     * Delete the user's account.
+     */
+    public function destroy(Request $request): RedirectResponse
+    {
+        $request->validateWithBag('userDeletion', [
+            'password' => ['required', 'current_password'],
+        ]);
+
+        $user = $request->user();
+
+        Auth::logout();
+
+        $user->delete();
+
+        $request->session()->invalidate();
+        $request->session()->regenerateToken();
+
+        return Redirect::to('/');
+    }
+}
+
+
+===== app\Http\Controllers\ReportController.php =====
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\Batch;
+use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
+
+class ReportController extends Controller
+{
+    public function index(Request $request)
+    {
+        // Date range (defaults to this week, Mon-Sun)
+        $from = $request->input('from', Carbon::now()->startOfWeek()->toDateString());
+        $to   = $request->input('to',   Carbon::now()->endOfWeek()->toDateString());
+
+        $batches = Batch::with('items.product')
+            ->whereBetween('batch_date', [$from, $to])
+            ->orderBy('batch_date')
+            ->get();
+
+        // Aggregate per flavor across all batches in the range
+        $rows = [];
+        foreach ($batches as $b) {
+            foreach ($b->items as $it) {
+                $name = $it->product->product_name ?? 'Unknown';
+                if (! isset($rows[$name])) {
+                    $rows[$name] = ['sent' => 0, 'returned' => 0, 'net' => 0, 'revenue' => 0];
+                }
+                $rows[$name]['sent']     += $it->qty_sent;
+                $rows[$name]['returned'] += $it->qty_returned;
+                $rows[$name]['net']      += $it->netSold();
+                $rows[$name]['revenue']  += $it->revenue();
+            }
+        }
+        ksort($rows);
+
+        $totals = [
+            'sent'     => array_sum(array_column($rows, 'sent')),
+            'returned' => array_sum(array_column($rows, 'returned')),
+            'net'      => array_sum(array_column($rows, 'net')),
+            'revenue'  => array_sum(array_column($rows, 'revenue')),
+        ];
+
+        $dispatched = $batches->sum(fn ($b) => $b->dispatchedValue());
+        $loss       = $batches->sum(fn ($b) => $b->lossValue());
+        $batchCount = $batches->count();
+
+        return view('reports.index', compact('rows', 'totals', 'from', 'to', 'dispatched', 'loss', 'batchCount'));
+    }
+}
+
+===== app\Http\Controllers\SupplierController.php =====
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\Supplier;
+use App\Models\SupplierProduct;
+use App\Models\User;
+use Illuminate\Http\Request;
+
+class SupplierController extends Controller
+{
+    public function index(Request $request)
+    {
+        $query = Supplier::with('user')->latest();
+
+        if ($request->search) {
+            $query->where(function ($q) use ($request) {
+                $q->where('name', 'like', '%' . $request->search . '%')
+                  ->orWhere('email', 'like', '%' . $request->search . '%')
+                  ->orWhere('phone', 'like', '%' . $request->search . '%');
+            });
+        }
+        if ($request->category) {
+            $query->where('category', $request->category);
+        }
+
+        $suppliers = $query->get();
+        return view('suppliers.index', compact('suppliers'));
+    }
+
+    public function create()
+    {
+        $categories    = Supplier::CATEGORIES;
+        // Supplier users who can be linked to this supplier record
+        $supplierUsers = User::where('role', 'supplier')->get();
+        return view('suppliers.create', compact('categories', 'supplierUsers'));
+    }
+
+    public function store(Request $request)
+    {
+        $validated = $request->validate([
+            'name'     => 'required|string|max:255',
+            'email'    => 'required|email|unique:suppliers,email',
+            'phone'    => 'required|string|max:20',
+            'address'  => 'required|string',
+            'category' => 'nullable|string|in:' . implode(',', array_keys(Supplier::CATEGORIES)),
+            'user_id'  => 'nullable|exists:users,id',
+        ]);
+
+        Supplier::create($validated);
+        return redirect()->route('suppliers.index')
+            ->with('success', 'Supplier added successfully!');
+    }
+
+    public function show(Supplier $supplier)
+    {
+        $supplier->load(['user', 'orders.items']);
+
+        // Get products listed by this supplier's linked user account
+        $products = $supplier->user_id
+            ? SupplierProduct::where('user_id', $supplier->user_id)->get()
+            : collect();
+
+        return view('suppliers.show', compact('supplier', 'products'));
+    }
+
+    public function edit(Supplier $supplier)
+    {
+        $categories    = Supplier::CATEGORIES;
+        $supplierUsers = User::where('role', 'supplier')->get();
+        return view('suppliers.edit', compact('supplier', 'categories', 'supplierUsers'));
+    }
+
+    public function update(Request $request, Supplier $supplier)
+    {
+        $validated = $request->validate([
+            'name'     => 'required|string|max:255',
+            'email'    => 'required|email|unique:suppliers,email,' . $supplier->id,
+            'phone'    => 'required|string|max:20',
+            'address'  => 'required|string',
+            'category' => 'nullable|string|in:' . implode(',', array_keys(Supplier::CATEGORIES)),
+            'user_id'  => 'nullable|exists:users,id',
+        ]);
+
+        $supplier->update($validated);
+        return redirect()->route('suppliers.index')
+            ->with('success', 'Supplier updated successfully!');
+    }
+
+    public function destroy(Supplier $supplier)
+    {
+        $supplier->delete();
+        return redirect()->route('suppliers.index')
+            ->with('success', 'Supplier deleted.');
+    }
+}
+
+===== app\Http\Controllers\SupplierProductController.php =====
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\Supplier;
+use App\Models\SupplierProduct;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
+
+class SupplierProductController extends Controller
+{
+    // Supplier sees their own products
+    public function index()
+    {
+        $this->requireSupplier();
+        $products = SupplierProduct::where('user_id', auth()->id())->latest()->get();
+        return view('supplier.products.index', compact('products'));
+    }
+
+    public function create()
+    {
+        $this->requireSupplier();
+        $categories = Supplier::CATEGORIES;
+        $units      = ['bags', 'pcs', 'liters', 'gallons', 'meters', 'kg',
+                        'tons', 'rolls', 'sheets', 'sets', 'boxes', 'drums'];
+        return view('supplier.products.create', compact('categories', 'units'));
+    }
+
+    public function store(Request $request)
+    {
+        $this->requireSupplier();
+
+        $validated = $request->validate([
+            'name'        => 'required|string|max:255',
+            'category'    => 'required|string',
+            'unit'        => 'required|string',
+            'price'       => 'required|numeric|min:0',
+            'description' => 'nullable|string|max:1000',
+            'image'       => 'nullable|image|mimes:jpeg,png,jpg,webp|max:2048',
+            'is_available' => 'nullable|boolean',
+        ]);
+
+        $imagePath = null;
+        if ($request->hasFile('image')) {
+            $imagePath = $request->file('image')->store('supplier-products', 'public');
+        }
+
+        SupplierProduct::create([
+            'user_id'      => auth()->id(),
+            'name'         => $validated['name'],
+            'category'     => $validated['category'],
+            'unit'         => $validated['unit'],
+            'price'        => $validated['price'],
+            'description'  => $validated['description'] ?? null,
+            'image'        => $imagePath,
+            'is_available' => $request->boolean('is_available', true),
+        ]);
+
+        return redirect()->route('supplier.products.index')
+            ->with('success', 'Product added successfully!');
+    }
+
+    public function edit(SupplierProduct $product)
+    {
+        $this->requireOwner($product);
+        $categories = Supplier::CATEGORIES;
+        $units      = ['bags', 'pcs', 'liters', 'gallons', 'meters', 'kg',
+                        'tons', 'rolls', 'sheets', 'sets', 'boxes', 'drums'];
+        return view('supplier.products.edit', compact('product', 'categories', 'units'));
+    }
+
+    public function update(Request $request, SupplierProduct $product)
+    {
+        $this->requireOwner($product);
+
+        $validated = $request->validate([
+            'name'        => 'required|string|max:255',
+            'category'    => 'required|string',
+            'unit'        => 'required|string',
+            'price'       => 'required|numeric|min:0',
+            'description' => 'nullable|string|max:1000',
+            'image'       => 'nullable|image|mimes:jpeg,png,jpg,webp|max:2048',
+            'is_available' => 'nullable|boolean',
+        ]);
+
+        $imagePath = $product->image;
+        if ($request->hasFile('image')) {
+            // Delete old image
+            if ($imagePath) Storage::disk('public')->delete($imagePath);
+            $imagePath = $request->file('image')->store('supplier-products', 'public');
+        }
+
+        $product->update([
+            'name'         => $validated['name'],
+            'category'     => $validated['category'],
+            'unit'         => $validated['unit'],
+            'price'        => $validated['price'],
+            'description'  => $validated['description'] ?? null,
+            'image'        => $imagePath,
+            'is_available' => $request->boolean('is_available', true),
+        ]);
+
+        return redirect()->route('supplier.products.index')
+            ->with('success', 'Product updated!');
+    }
+
+    public function destroy(SupplierProduct $product)
+    {
+        $this->requireOwner($product);
+        if ($product->image) Storage::disk('public')->delete($product->image);
+        $product->delete();
+        return redirect()->route('supplier.products.index')
+            ->with('success', 'Product deleted.');
+    }
+
+    // Supplier sees incoming orders for their products
+    public function orders()
+    {
+        $this->requireSupplier();
+        $orders = \App\Models\Order::with(['user', 'items', 'supplier'])
+            ->where('supplier_id', auth()->user()->supplier?->id)
+            ->latest()->get();
+        return view('supplier.orders', compact('orders'));
+    }
+
+    // Supplier updates order status (confirm → ship → deliver)
+    public function updateOrderStatus(Request $request, \App\Models\Order $order)
+    {
+        $this->requireSupplier();
+
+        $request->validate([
+            'status' => 'required|in:confirmed,shipped,delivered,cancelled',
+        ]);
+
+        $order->update(['status' => $request->status]);
+
+        return back()->with('success', 'Order status updated to ' . ucfirst($request->status));
+    }
+
+    // ── Helpers ──
+    private function requireSupplier()
+    {
+        if (!auth()->user()->isSupplier()) abort(403, 'Supplier access only.');
+    }
+
+    private function requireOwner(SupplierProduct $product)
+    {
+        $this->requireSupplier();
+        if ($product->user_id !== auth()->id()) abort(403);
+    }
+}
+
+===== app\Http\Controllers\UserController.php =====
+<?php
+namespace App\Http\Controllers;
+
+use App\Models\User;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Validation\Rules\Password;
+
+class UserController extends Controller
+{
+    public function index()
+    {
+        $users = User::orderByRaw("FIELD(role,'Owner','Manager','Staff')")
+                      ->orderBy('first_name')->orderBy('last_name')->get();
+        return view('users.index', compact('users'));
+    }
+
+    public function create()
+    {
+        return view('users.create');
+    }
+
+    public function store(Request $request)
+    {
+        $data = $request->validate([
+            'first_name' => 'required|string|max:100',
+            'last_name'  => 'required|string|max:100',
+            'email'      => 'required|email|unique:users,email',
+            'role'       => 'required|in:Manager,Staff',
+            'password'   => ['required', 'confirmed', Password::min(6)],
+        ]);
+
+        $user = new User();
+        $user->first_name = $data['first_name'];
+        $user->last_name  = $data['last_name'];
+        $user->email      = $data['email'];
+        $user->role       = $data['role'];
+        $user->password   = Hash::make($data['password']);
+        $user->is_active  = true;
+        $user->save();
+
+        return redirect()->route('users.index')
+            ->with('success', $data['first_name'].' '.$data['last_name'].' added as '.$data['role'].'.');
+    }
+
+    public function edit(User $user)
+    {
+        if ($user->role === 'Owner') {
+            return redirect()->route('users.index')->with('error', 'The Owner account cannot be edited here.');
+        }
+        return view('users.edit', compact('user'));
+    }
+
+    public function update(Request $request, User $user)
+    {
+        if ($user->role === 'Owner') {
+            return redirect()->route('users.index')->with('error', 'The Owner account cannot be edited here.');
+        }
+        $data = $request->validate([
+            'first_name' => 'required|string|max:100',
+            'last_name'  => 'required|string|max:100',
+            'email'      => 'required|email|unique:users,email,'.$user->id,
+            'role'       => 'required|in:Manager,Staff',
+            'password'   => ['nullable', 'confirmed', Password::min(6)],
+        ]);
+
+        $user->first_name = $data['first_name'];
+        $user->last_name  = $data['last_name'];
+        $user->email      = $data['email'];
+        $user->role       = $data['role'];
+        if (!empty($data['password'])) {
+            $user->password = Hash::make($data['password']);
+        }
+        $user->save();
+
+        return redirect()->route('users.index')->with('success', $user->first_name.' '.$user->last_name.' updated.');
+    }
+
+    public function toggleStatus(User $user)
+    {
+        if ($user->role === 'Owner') {
+            return redirect()->route('users.index')->with('error', 'The Owner account cannot be deactivated.');
+        }
+        if (auth()->id() === $user->id) {
+            return redirect()->route('users.index')->with('error', 'You cannot deactivate your own account.');
+        }
+        $user->is_active = !$user->is_active;
+        $user->save();
+        $state = $user->is_active ? 'activated' : 'deactivated';
+        return redirect()->route('users.index')->with('success', $user->first_name.' '.$state.'.');
+    }
+}
+
+===== app\Http\Middleware\AdminMiddleware.php =====
+<?php
+
+namespace App\Http\Middleware;
+
+use Closure;
+use Illuminate\Http\Request;
+use Symfony\Component\HttpFoundation\Response;
+
+class AdminMiddleware
+{
+    public function handle(Request $request, Closure $next): Response
+    {
+        if (!auth()->check() || !in_array(auth()->user()->role, ['Owner', 'Manager'])) {
+            abort(403, 'Unauthorized. Owner or Manager access required.');
+        }
+
+        return $next($request);
+    }
+}
+
+===== app\Http\Middleware\EnsureActive.php =====
+<?php
+namespace App\Http\Middleware;
+
+use Closure;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
+
+class EnsureActive
+{
+    public function handle(Request $request, Closure $next)
+    {
+        $u = Auth::user();
+        if ($u && isset($u->is_active) && !$u->is_active) {
+            Auth::logout();
+            $request->session()->invalidate();
+            $request->session()->regenerateToken();
+            return redirect()->route('login')->withErrors(['email' => 'Your account has been deactivated. Please contact the owner.']);
+        }
+        return $next($request);
+    }
+}
+
+===== app\Http\Middleware\SupplierMiddleware.php =====
+<?php
+
+namespace App\Http\Middleware;
+
+use Closure;
+use Illuminate\Http\Request;
+use Symfony\Component\HttpFoundation\Response;
+
+class SupplierMiddleware
+{
+    public function handle(Request $request, Closure $next): Response
+    {
+        if (!auth()->check() || !auth()->user()->isSupplier()) {
+            abort(403, 'Supplier access only.');
+        }
+        return $next($request);
+    }
+}
+
+===== app\Http\Requests\Auth\LoginRequest.php =====
+<?php
+
+namespace App\Http\Requests\Auth;
+
+use Illuminate\Auth\Events\Lockout;
+use Illuminate\Contracts\Validation\ValidationRule;
+use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
+
+class LoginRequest extends FormRequest
+{
+    /**
+     * Determine if the user is authorized to make this request.
+     */
+    public function authorize(): bool
+    {
+        return true;
+    }
+
+    /**
+     * Get the validation rules that apply to the request.
+     *
+     * @return array<string, ValidationRule|array<mixed>|string>
+     */
+    public function rules(): array
+    {
+        return [
+            'email' => ['required', 'string', 'email'],
+            'password' => ['required', 'string'],
+        ];
+    }
+
+    /**
+     * Attempt to authenticate the request's credentials.
+     *
+     * @throws ValidationException
+     */
+    public function authenticate(): void
+    {
+        $this->ensureIsNotRateLimited();
+
+        if (! Auth::attempt($this->only('email', 'password'), $this->boolean('remember'))) {
+            RateLimiter::hit($this->throttleKey());
+
+            throw ValidationException::withMessages([
+                'email' => trans('auth.failed'),
+            ]);
+        }
+
+        RateLimiter::clear($this->throttleKey());
+    }
+
+    /**
+     * Ensure the login request is not rate limited.
+     *
+     * @throws ValidationException
+     */
+    public function ensureIsNotRateLimited(): void
+    {
+        if (! RateLimiter::tooManyAttempts($this->throttleKey(), 5)) {
+            return;
+        }
+
+        event(new Lockout($this));
+
+        $seconds = RateLimiter::availableIn($this->throttleKey());
+
+        throw ValidationException::withMessages([
+            'email' => trans('auth.throttle', [
+                'seconds' => $seconds,
+                'minutes' => ceil($seconds / 60),
+            ]),
+        ]);
+    }
+
+    /**
+     * Get the rate limiting throttle key for the request.
+     */
+    public function throttleKey(): string
+    {
+        return Str::transliterate(Str::lower($this->string('email')).'|'.$this->ip());
+    }
+}
+
+
+===== app\Http\Requests\ProfileUpdateRequest.php =====
+<?php
+
+namespace App\Http\Requests;
+
+use App\Models\User;
+use Illuminate\Contracts\Validation\ValidationRule;
+use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
+
+class ProfileUpdateRequest extends FormRequest
+{
+    /**
+     * Get the validation rules that apply to the request.
+     *
+     * @return array<string, ValidationRule|array<mixed>|string>
+     */
+    public function rules(): array
+    {
+        return [
+            'name' => ['required', 'string', 'max:255'],
+            'email' => [
+                'required',
+                'string',
+                'lowercase',
+                'email',
+                'max:255',
+                Rule::unique(User::class)->ignore($this->user()->id),
+            ],
+        ];
+    }
+}
+
+
+===== app\Models\Batch.php =====
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+
+class Batch extends Model
+{
+    protected $fillable = [
+        'source_site_id', 'destination_site_id', 'batch_date', 'status', 'notes', 'created_by',
+    ];
+
+    protected $casts = ['batch_date' => 'date'];
+
+    public function items()           { return $this->hasMany(BatchItem::class); }
+    public function sourceSite()      { return $this->belongsTo(Site::class, 'source_site_id'); }
+    public function destinationSite() { return $this->belongsTo(Site::class, 'destination_site_id'); }
+    public function creator()         { return $this->belongsTo(User::class, 'created_by'); }
+
+    // â”€â”€ Reconciliation totals (computed, no internet needed) â”€â”€
+    public function totalSent()      { return (int) $this->items->sum('qty_sent'); }
+    public function totalReturned()  { return (int) $this->items->sum('qty_returned'); }
+    public function totalNetSold()   { return $this->items->sum(fn ($i) => $i->qty_sent - $i->qty_returned); }
+    public function dispatchedValue(){ return $this->items->sum(fn ($i) => $i->qty_sent * $i->unit_price); }
+    public function totalRevenue()   { return $this->items->sum(fn ($i) => ($i->qty_sent - $i->qty_returned) * $i->unit_price); }
+    public function lossValue()      { return $this->items->sum(fn ($i) => $i->qty_returned * $i->unit_price); }
+}
+
+===== app\Models\BatchItem.php =====
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+
+class BatchItem extends Model
+{
+    protected $fillable = [
+        'batch_id', 'product_id', 'qty_sent', 'qty_returned', 'unit_price',
+    ];
+
+    public function batch()   { return $this->belongsTo(Batch::class); }
+    public function product() { return $this->belongsTo(Product::class); }
+
+    public function netSold() { return $this->qty_sent - $this->qty_returned; }
+    public function revenue() { return $this->netSold() * $this->unit_price; }
+}
+
+===== app\Models\Commission.php =====
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+
+class Commission extends Model
+{
+    protected $table = 'orders';
+
+    protected $fillable = [
+        'user_id', 'site_id', 'customer_name', 'client_type', 'order_type',
+        'design_description', 'needed_by_date', 'total_amount', 'deposit_amount', 'status',
+    ];
+
+    protected $casts = [
+        'needed_by_date' => 'date',
+    ];
+
+    public const STAGES = ['Inquiry', 'Confirmed', 'Baking', 'Ready', 'Completed'];
+
+    public function items() { return $this->hasMany(OrderItem::class, 'order_id'); }
+    public function site()  { return $this->belongsTo(Site::class); }
+
+    public function balance() { return $this->total_amount - $this->deposit_amount; }
+}
+
+===== app\Models\Delivery.php =====
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
+
+class Delivery extends Model
+{
+    use HasFactory;
+
+    protected $fillable = [
+        'order_id', 'supplier_id', 'delivery_number',
+        'delivered_at', 'received_by', 'status', 'notes',
+    ];
+
+    protected $casts = [
+        'delivered_at' => 'date',
+    ];
+
+    public const STATUSES = [
+        'pending'  => ['label' => 'Pending',  'color' => 'bg-yellow-100 text-yellow-800'],
+        'partial'  => ['label' => 'Partial',  'color' => 'bg-orange-100 text-orange-800'],
+        'complete' => ['label' => 'Complete', 'color' => 'bg-green-100 text-green-800'],
+    ];
+
+    public function order()    { return $this->belongsTo(Order::class); }
+    public function supplier() { return $this->belongsTo(Supplier::class); }
+    public function items()    { return $this->hasMany(DeliveryItem::class); }
+
+    protected static function booted(): void
+    {
+        static::creating(function (Delivery $d) {
+            $d->delivery_number = 'DEL-' . date('Y') . '-' . str_pad(
+                static::whereYear('created_at', date('Y'))->count() + 1,
+                4, '0', STR_PAD_LEFT
+            );
+        });
+    }
+}
+
+===== app\Models\DeliveryItem.php =====
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
+
+class DeliveryItem extends Model
+{
+    use HasFactory;
+
+    protected $fillable = [
+        'delivery_id', 'order_item_id', 'item_name', 'category',
+        'unit', 'quantity_ordered', 'quantity_delivered',
+        'quantity_damaged', 'condition', 'damage_notes',
+    ];
+
+    public const CONDITIONS = [
+        'good'           => ['label' => 'Good',           'color' => 'bg-green-100 text-green-800'],
+        'partial_damage' => ['label' => 'Partial Damage', 'color' => 'bg-orange-100 text-orange-800'],
+        'all_damaged'    => ['label' => 'All Damaged',    'color' => 'bg-red-100 text-red-800'],
+    ];
+
+    public function delivery()  { return $this->belongsTo(Delivery::class); }
+    public function orderItem() { return $this->belongsTo(OrderItem::class); }
+}
+
+===== app\Models\Expense.php =====
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+
+class Expense extends Model
+{
+    protected $fillable = [
+        'expense_date',
+        'category',
+        'description',
+        'amount',
+        'inventory_id',
+        'quantity',
+        'created_by',
+    ];
+
+    protected $casts = [
+        'expense_date' => 'date',
+        'amount'       => 'decimal:2',
+    ];
+
+    public function inventoryItem()
+    {
+        return $this->belongsTo(Inventory::class, 'inventory_id');
+    }
+
+    public function creator()
+    {
+        return $this->belongsTo(User::class, 'created_by');
+    }
+}
+
+===== app\Models\Inventory.php =====
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+
+class Inventory extends Model
+{
+    protected $table = 'inventory';
+
+    protected $fillable = [
+        'item_name',
+        'category',
+        'unit',
+        'quantity_on_hand',
+        'quantity_damaged',
+        'minimum_stock',
+        'site_id',
+        'notes',
+    ];
+
+    public function site()
+    {
+        return $this->belongsTo(Site::class);
+    }
+
+    public function logs()
+    {
+        return $this->hasMany(InventoryLog::class);
+    }
+
+    public function usableQuantity()
+    {
+        return $this->quantity_on_hand - $this->quantity_damaged;
+    }
+
+    public function isLowStock()
+    {
+        return $this->usableQuantity() <= $this->minimum_stock;
+    }
+}
+
+===== app\Models\InventoryLog.php =====
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
+
+class InventoryLog extends Model
+{
+    use HasFactory;
+
+    protected $table = 'inventory_logs';
+
+    // ← FIX: was wrong before — had Inventory fields instead of InventoryLog fields
+    protected $fillable = [
+        'inventory_id',
+        'delivery_id',
+        'type',        // received | used | damaged | adjustment
+        'quantity',
+        'reference',
+        'notes',
+        'user_id',
+    ];
+
+    public const TYPES = [
+        'received'   => ['label' => 'Received',   'color' => 'text-green-700'],
+        'used'       => ['label' => 'Used',        'color' => 'text-blue-700'],
+        'damaged'    => ['label' => 'Damaged',     'color' => 'text-red-700'],
+        'adjustment' => ['label' => 'Adjustment',  'color' => 'text-gray-700'],
+    ];
+
+    public function inventory() { return $this->belongsTo(Inventory::class); }
+    public function delivery()  { return $this->belongsTo(Delivery::class); }
+    public function user()      { return $this->belongsTo(User::class); }
+}
+
+===== app\Models\Order.php =====
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+
+class Order extends Model
+{
+    protected $fillable = [
+        'user_id', 'site_id', 'customer_name', 'order_type',
+        'design_description', 'needed_by_date',
+        'total_amount', 'deposit_amount', 'status',
+    ];
+
+    public function user()  { return $this->belongsTo(User::class); }
+    public function site()  { return $this->belongsTo(Site::class); }
+    public function items() { return $this->hasMany(OrderItem::class); }
+}
+
+===== app\Models\OrderItem.php =====
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+
+class OrderItem extends Model
+{
+    protected $fillable = ['order_id', 'product_id', 'quantity', 'price'];
+
+    public function order()   { return $this->belongsTo(Order::class); }
+    public function product() { return $this->belongsTo(Product::class); }
+}
+
+===== app\Models\Product.php =====
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+
+class Product extends Model
+{
+    protected $table = 'products';
+
+    protected $fillable = [
+        'product_name',
+        'description',
+        'category',
+        'price',
+        'stock_quantity',
+        'status',
+        'site_id',
+        'image_path',
+    ];
+
+    protected $casts = [
+        'price' => 'float',
+    ];
+
+    public function site()
+    {
+        return $this->belongsTo(Site::class);
+    }
+
+    // Materials (inventory items) used in this product - the recipe
+    public function materials()
+    {
+        return $this->belongsToMany(Inventory::class, 'product_materials')
+                    ->withPivot('quantity_used')
+                    ->withTimestamps();
+    }
+
+    public function orderItems()
+    {
+        return $this->hasMany(OrderItem::class);
+    }
+}
+
+===== app\Models\ProductRawMaterial.php =====
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+
+class ProductRawMaterial extends Model
+{
+    protected $fillable = ['product_id', 'raw_material_id', 'quantity_needed'];
+
+    public function product()
+    {
+        return $this->belongsTo(Product::class);
+    }
+
+    public function rawMaterial()
+    {
+        return $this->belongsTo(RawMaterial::class);
+    }
+}
+
+===== app\Models\RawMaterial.php =====
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+
+class RawMaterial extends Model
+{
+    protected $fillable = ['name', 'unit', 'stock_quantity', 'site_id'];
+
+    public function site()
+    {
+        return $this->belongsTo(Site::class);
+    }
+
+    public function products()
+    {
+        return $this->belongsToMany(Product::class, 'product_raw_materials')
+                     ->withPivot('quantity_needed');
+    }
+}
+
+===== app\Models\Site.php =====
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+
+class Site extends Model
+{
+    protected $fillable = ['site_name', 'street', 'city'];
+
+    public function users()
+    {
+        return $this->hasMany(User::class);
+    }
+
+    public function products()
+    {
+        return $this->hasMany(Product::class);
+    }
+
+    public function rawMaterials()
+    {
+        return $this->hasMany(RawMaterial::class);
+    }
+}
+
+===== app\Models\Supplier.php =====
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
+
+class Supplier extends Model
+{
+    use HasFactory;
+
+    protected $fillable = [
+        'user_id',   // ← links to supplier's User account
+        'name',
+        'email',
+        'phone',
+        'address',
+        'category',
+    ];
+
+    public const CATEGORIES = [
+        'cement'         => 'Cement Supplier',
+        'steel'          => 'Steel & Rebar Supplier',
+        'sand_gravel'    => 'Sand & Gravel Supplier',
+        'hollow_blocks'  => 'Hollow Blocks / CHB Supplier',
+        'lumber_wood'    => 'Lumber & Wood Supplier',
+        'paint'          => 'Paint & Coatings Supplier',
+        'tiles_flooring' => 'Tiles & Flooring Supplier',
+        'glass_windows'  => 'Glass & Windows Supplier',
+        'roofing'        => 'Roofing Materials Supplier',
+        'insulation'     => 'Insulation Supplier',
+        'plumbing'       => 'Plumbing & Pipes Supplier',
+        'electrical'     => 'Electrical & Wiring Supplier',
+        'hvac'           => 'HVAC / Ventilation Supplier',
+        'equipment'      => 'Heavy Equipment Provider',
+        'tools'          => 'Construction Tools Supplier',
+        'scaffolding'    => 'Scaffolding Supplier',
+        'safety'         => 'Safety Equipment Supplier',
+        'hardware'       => 'General Hardware Supplier',
+        'chemicals'      => 'Construction Chemicals Supplier',
+        'other'          => 'Other',
+    ];
+
+    // The User account of this supplier
+    public function user()    { return $this->belongsTo(User::class); }
+    public function orders()  { return $this->hasMany(Order::class); }
+
+    // Products listed by this supplier's user account
+    public function products()
+    {
+        return $this->hasMany(SupplierProduct::class, 'user_id', 'user_id');
+    }
+}
+
+===== app\Models\SupplierProduct.php =====
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
+
+class SupplierProduct extends Model
+{
+    use HasFactory;
+
+    protected $fillable = [
+        'user_id',
+        'name',
+        'category',
+        'unit',
+        'price',
+        'description',
+        'image',
+        'is_available',
+    ];
+
+    protected $casts = [
+        'is_available' => 'boolean',
+        'price'        => 'decimal:2',
+    ];
+
+    // The supplier (User with role=supplier) who owns this product
+    public function supplier() { return $this->belongsTo(User::class, 'user_id'); }
+}
+
+===== app\Models\User.php =====
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Foundation\Auth\User as Authenticatable;
+use Illuminate\Notifications\Notifiable;
+
+class User extends Authenticatable
+{
+    use HasFactory, Notifiable;
+
+    protected $fillable = [
+        'first_name',
+        'last_name',
+        'mobile_no',
+        'email',
+        'password',
+        'role',
+        'site_id',
+    ];
+
+    protected $hidden = ['password', 'remember_token'];
+
+    protected function casts(): array
+    {
+        return [
+            'email_verified_at' => 'datetime',
+            'password'          => 'hashed',
+        ];
+    }
+
+    // ── Role helpers ──
+    public function isOwner(): bool   { return $this->role === 'Owner'; }
+    public function isManager(): bool { return $this->role === 'Manager'; }
+    public function isStaff(): bool   { return $this->role === 'Staff'; }
+
+    // ── Convenience accessor ──
+    public function getNameAttribute(): string
+    {
+        return trim("{$this->first_name} {$this->last_name}");
+    }
+
+    // ── Relationships ──
+    public function site()   { return $this->belongsTo(Site::class); }
+    public function orders() { return $this->hasMany(Order::class); }
+}
+
+===== app\Notifications\UpcomingDeliveryReminder.php =====
+<?php
+
+namespace App\Console\Commands;
+
+use App\Models\Delivery;
+use App\Models\User;
+use App\Notifications\UpcomingDeliveryReminder;
+use Illuminate\Console\Command;
+use Carbon\Carbon;
+
+class CheckUpcomingDeliveries extends Command
+{
+    protected $signature = 'deliveries:check-upcoming';
+    protected $description = 'Notify staff of deliveries due in 2 days';
+
+    public function handle(): void
+    {
+        $targetDate = Carbon::today()->addDays(2)->toDateString();
+
+        $deliveries = Delivery::whereDate('delivery_date', $targetDate)
+            ->where('status', '!=', 'complete')
+            ->get();
+
+        if ($deliveries->isEmpty()) {
+            $this->info('No deliveries due in 2 days.');
+            return;
+        }
+
+        // For now, notify everyone with role Owner or Manager
+        $recipients = User::whereIn('role', ['Owner', 'Manager'])->get();
+
+        foreach ($deliveries as $delivery) {
+            foreach ($recipients as $user) {
+                $user->notify(new UpcomingDeliveryReminder($delivery));
+            }
+            $this->info("Notified team about delivery {$delivery->delivery_number}");
+        }
+    }
+}
+
+===== app\Providers\AppServiceProvider.php =====
+<?php
+
+namespace App\Providers;
+
+use Illuminate\Support\ServiceProvider;
+use Illuminate\Support\Facades\URL;
+use Illuminate\Support\Facades\Gate;
+
+class AppServiceProvider extends ServiceProvider
+{
+    /**
+     * Register any application services.
+     */
+    public function register(): void
+    {
+        //
+    }
+
+    /**
+     * Bootstrap any application services.
+     */
+    public function boot(): void
+    {
+        if (env('APP_ENV') === 'production') {
+            URL::forceScheme('https');
+        }
+
+        // Admin gate â€” Owner and Manager can manage products, inventory, etc.
+        // This makes @can('admin') work in Blade views.
+        Gate::define('admin', function ($user) {
+            return in_array($user->role, ['Owner', 'Manager']);
+        });
+    }
+}
+
+===== app\View\Components\AppLayout.php =====
+<?php
+
+namespace App\View\Components;
+
+use Illuminate\View\Component;
+use Illuminate\View\View;
+
+class AppLayout extends Component
+{
+    /**
+     * Get the view / contents that represents the component.
+     */
+    public function render(): View
+    {
+        return view('layouts.app');
+    }
+}
+
+
+===== app\View\Components\GuestLayout.php =====
+<?php
+
+namespace App\View\Components;
+
+use Illuminate\View\Component;
+use Illuminate\View\View;
+
+class GuestLayout extends Component
+{
+    /**
+     * Get the view / contents that represents the component.
+     */
+    public function render(): View
+    {
+        return view('layouts.guest');
+    }
+}
+
+
+===== routes\auth.php =====
+<?php
+
+use App\Http\Controllers\Auth\AuthenticatedSessionController;
+use App\Http\Controllers\Auth\ConfirmablePasswordController;
+use App\Http\Controllers\Auth\EmailVerificationNotificationController;
+use App\Http\Controllers\Auth\EmailVerificationPromptController;
+use App\Http\Controllers\Auth\NewPasswordController;
+use App\Http\Controllers\Auth\PasswordController;
+use App\Http\Controllers\Auth\PasswordResetLinkController;
+use App\Http\Controllers\Auth\RegisteredUserController;
+use App\Http\Controllers\Auth\VerifyEmailController;
+use Illuminate\Support\Facades\Route;
+
+Route::middleware('guest')->group(function () {
+    Route::get('register', [RegisteredUserController::class, 'create'])
+        ->name('register');
+
+    Route::post('register', [RegisteredUserController::class, 'store']);
+
+    Route::get('login', [AuthenticatedSessionController::class, 'create'])
+        ->name('login');
+
+    Route::post('login', [AuthenticatedSessionController::class, 'store']);
+
+    Route::get('forgot-password', [PasswordResetLinkController::class, 'create'])
+        ->name('password.request');
+
+    Route::post('forgot-password', [PasswordResetLinkController::class, 'store'])
+        ->name('password.email');
+
+    Route::get('reset-password/{token}', [NewPasswordController::class, 'create'])
+        ->name('password.reset');
+
+    Route::post('reset-password', [NewPasswordController::class, 'store'])
+        ->name('password.store');
+});
+
+Route::middleware('auth')->group(function () {
+    Route::get('verify-email', EmailVerificationPromptController::class)
+        ->name('verification.notice');
+
+    Route::get('verify-email/{id}/{hash}', VerifyEmailController::class)
+        ->middleware(['signed', 'throttle:6,1'])
+        ->name('verification.verify');
+
+    Route::post('email/verification-notification', [EmailVerificationNotificationController::class, 'store'])
+        ->middleware('throttle:6,1')
+        ->name('verification.send');
+
+    Route::get('confirm-password', [ConfirmablePasswordController::class, 'show'])
+        ->name('password.confirm');
+
+    Route::post('confirm-password', [ConfirmablePasswordController::class, 'store']);
+
+    Route::put('password', [PasswordController::class, 'update'])->name('password.update');
+
+    Route::post('logout', [AuthenticatedSessionController::class, 'destroy'])
+        ->name('logout');
+});
+
+
+===== routes\console.php =====
+<?php
+
+use Illuminate\Foundation\Inspiring;
+use Illuminate\Support\Facades\Artisan;
+
+Artisan::command('inspire', function () {
+    $this->comment(Inspiring::quote());
+})->purpose('Display an inspiring quote');
+
+
+===== routes\web.php =====
+<?php
+use App\Http\Controllers\ProductController;
+use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\DeliveryController;
+use App\Http\Controllers\InventoryController;
+use App\Http\Controllers\OrderController;
+use App\Http\Controllers\ProfileController;
+use App\Http\Controllers\ExpenseController;
+use Illuminate\Support\Facades\Route;
+
+Route::get('/', fn() => view('welcome'))->name('welcome');
+
+Route::middleware(['auth', \App\Http\Middleware\EnsureActive::class])->group(function () {
+
+    Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
+    Route::get('/profile',    [ProfileController::class, 'edit'])->name('profile.edit');
+    Route::patch('/profile',  [ProfileController::class, 'update'])->name('profile.update');
+    Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
+
+    // ── ORDERS ── (create/store BEFORE the {order} wildcard)
+    Route::get('/orders', [OrderController::class, 'index'])->name('orders.index');
+    Route::middleware('admin')->group(function () {
+        Route::get('/orders/create', [OrderController::class, 'create'])->name('orders.create');
+        Route::post('/orders', [OrderController::class, 'store'])->name('orders.store');
+        Route::delete('/orders/{order}', [OrderController::class, 'destroy'])->name('orders.destroy');
+        Route::patch('/orders/{order}/status', [OrderController::class, 'updateStatus'])->name('orders.status');
+    });
+    Route::get('/orders/{order}', [OrderController::class, 'show'])->name('orders.show');
+
+    // ── DELIVERIES ──
+    Route::get('/deliveries', [DeliveryController::class, 'index'])->name('deliveries.index');
+    Route::middleware('admin')->group(function () {
+        Route::get('/deliveries/create', [DeliveryController::class, 'create'])->name('deliveries.create');
+        Route::post('/deliveries', [DeliveryController::class, 'store'])->name('deliveries.store');
+    });
+    Route::get('/deliveries/{delivery}', [DeliveryController::class, 'show'])->name('deliveries.show');
+
+
+    // ── INVENTORY ──
+    Route::get('/inventory', [InventoryController::class, 'index'])->name('inventory.index');
+    Route::middleware('admin')->group(function () {
+        Route::get('/inventory/create', [InventoryController::class, 'create'])->name('inventory.create');
+        Route::post('/inventory', [InventoryController::class, 'store'])->name('inventory.store');
+        Route::patch('/inventory/{inventory}/adjust', [InventoryController::class, 'adjust'])->name('inventory.adjust');
+        Route::get('/inventory/{inventory}/edit', [InventoryController::class, 'edit'])->name('inventory.edit');
+        Route::put('/inventory/{inventory}', [InventoryController::class, 'update'])->name('inventory.update');
+        Route::delete('/inventory/{inventory}', [InventoryController::class, 'destroy'])->name('inventory.destroy');
+    });
+    Route::get('/inventory/{inventory}', [InventoryController::class, 'show'])->name('inventory.show');
+
+    // ── PRODUCTS ──
+    Route::get('/products', [ProductController::class, 'index'])->name('products.index');
+    Route::middleware('admin')->group(function () {
+        Route::get('/products/create', [ProductController::class, 'create'])->name('products.create');
+        Route::post('/products', [ProductController::class, 'store'])->name('products.store');
+    });
+    Route::get('/products/{product}', [ProductController::class, 'show'])->name('products.show');
+    
+    Route::middleware('admin')->group(function () {
+    Route::get('/products/create',                  [ProductController::class, 'create'])->name('products.create');
+    Route::post('/products',                        [ProductController::class, 'store'])->name('products.store');
+    Route::get('/products/{product}/edit',          [ProductController::class, 'edit'])->name('products.edit');
+    Route::put('/products/{product}',               [ProductController::class, 'update'])->name('products.update');
+    Route::delete('/products/{product}',            [ProductController::class, 'destroy'])->name('products.destroy');
+});
+
+});
+
+// Disable public registration - Owner/Manager create accounts in Users module
+Route::match(['get', 'post'], 'register', function () {
+    return redirect()->route('login');
+});
+
+require __DIR__ . '/auth.php';
+
+// ===== Branch Transfers (Trove) =====
+Route::middleware(['auth'])->group(function () {
+    Route::get('/branch-transfers', [\App\Http\Controllers\BranchTransferController::class, 'index'])->name('branch-transfers.index');
+    Route::get('/branch-transfers/create', [\App\Http\Controllers\BranchTransferController::class, 'create'])->name('branch-transfers.create');
+    Route::post('/branch-transfers', [\App\Http\Controllers\BranchTransferController::class, 'store'])->name('branch-transfers.store');
+    Route::get('/branch-transfers/{batch}', [\App\Http\Controllers\BranchTransferController::class, 'show'])->name('branch-transfers.show');
+    Route::put('/branch-transfers/{batch}/returns', [\App\Http\Controllers\BranchTransferController::class, 'logReturns'])->name('branch-transfers.returns');
+});
+
+// ===== Reports (Trove) =====
+Route::middleware(['auth'])->group(function () {
+    Route::get('/reports', [\App\Http\Controllers\ReportController::class, 'index'])->name('reports.index');
+});
+
+// ===== Commissions (Trove) =====
+Route::middleware(['auth'])->group(function () {
+    Route::get('/commissions', [\App\Http\Controllers\CommissionController::class, 'index'])->name('commissions.index');
+    Route::get('/commissions/create', [\App\Http\Controllers\CommissionController::class, 'create'])->name('commissions.create');
+    Route::post('/commissions', [\App\Http\Controllers\CommissionController::class, 'store'])->name('commissions.store');
+    Route::get('/commissions/{commission}', [\App\Http\Controllers\CommissionController::class, 'show'])->name('commissions.show');
+    Route::put('/commissions/{commission}/status', [\App\Http\Controllers\CommissionController::class, 'updateStatus'])->name('commissions.status');
+});
+
+// ---- User Management (Owner & Manager) ----
+Route::middleware(['auth', 'admin', \App\Http\Middleware\EnsureActive::class])->group(function () {
+    Route::get('/users',                 [\App\Http\Controllers\UserController::class, 'index'])->name('users.index');
+    Route::get('/users/create',          [\App\Http\Controllers\UserController::class, 'create'])->name('users.create');
+    Route::post('/users',                [\App\Http\Controllers\UserController::class, 'store'])->name('users.store');
+    Route::get('/users/{user}/edit',     [\App\Http\Controllers\UserController::class, 'edit'])->name('users.edit');
+    Route::put('/users/{user}',          [\App\Http\Controllers\UserController::class, 'update'])->name('users.update');
+    Route::patch('/users/{user}/toggle', [\App\Http\Controllers\UserController::class, 'toggleStatus'])->name('users.toggle');
+});
+
+// ===== Expenses & Financial Statement (Trove) =====
+Route::middleware(['auth'])->group(function () {
+    Route::resource('expenses', \App\Http\Controllers\ExpenseController::class);
+    Route::get('/financial-statement', [\App\Http\Controllers\FinancialStatementController::class, 'index'])->name('financial-statement.index');
+});
+// ---- Inventory Archive (Owner & Manager) ----
+Route::middleware(['auth', 'admin', \App\Http\Middleware\EnsureActive::class])->group(function () {
+    Route::patch('/inventory/{inventory}/archive', [\App\Http\Controllers\InventoryController::class, 'archive'])->name('inventory.archive');
+    Route::patch('/inventory/{inventory}/restore', [\App\Http\Controllers\InventoryController::class, 'restore'])->name('inventory.restore');
+});
+
