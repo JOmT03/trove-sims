@@ -1,19 +1,21 @@
 <?php
+
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\DB;
 
 return new class extends Migration {
     public function up(): void {
-        // 1) Remove the delivery_id FK + column from inventory_logs (if present)
         if (Schema::hasTable('inventory_logs') && Schema::hasColumn('inventory_logs', 'delivery_id')) {
-            Schema::table('inventory_logs', function (Blueprint $table) {
-                $table->dropForeign(['delivery_id']);
-                $table->dropColumn('delivery_id');
+            // Drop foreign key using exact constraint name first
+            DB::statement('ALTER TABLE `inventory_logs` DROP FOREIGN KEY `inventory_logs_ibfk_2`;');
+
+            Schema::table('inventory_logs', function (Blueprint $table) {$table->dropColumn('delivery_id');
             });
         }
 
-        // 2) Drop legacy delivery tables (child first, then parent)
+        // Drop legacy delivery tables (child first, then parent)
         Schema::dropIfExists('delivery_items');
         Schema::dropIfExists('deliveries');
     }
