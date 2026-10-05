@@ -1,3 +1,16 @@
+# ============================================================
+#  TROVE - Fix navbar (Main / Audit / Account / Administration)
+#     powershell -ExecutionPolicy Bypass -File setup-navbar-audit.ps1
+# ============================================================
+$ErrorActionPreference = "Stop"
+$root = $PSScriptRoot
+if ([string]::IsNullOrEmpty($root)) { $root = Get-Location }
+if (-not (Test-Path (Join-Path $root "artisan"))) {
+    Write-Host "ERROR: run from your project root (where artisan is)." -ForegroundColor Red; exit 1
+}
+$Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+$p = Join-Path $root "resources\views\layouts\app.blade.php"
+$content = @'
 <!DOCTYPE html>
 <html lang="{{ str_replace('_', '-', app()->getLocale()) }}">
 <head>
@@ -173,3 +186,9 @@
 
 </body>
 </html>
+'@
+[System.IO.File]::WriteAllText($p, $content, $Utf8NoBom)
+Write-Host "  wrote resources\views\layouts\app.blade.php" -ForegroundColor Green
+php artisan view:clear
+Write-Host ""
+Write-Host "DONE - refresh (Ctrl+F5). Main / Audit / Account / Administration." -ForegroundColor Cyan
