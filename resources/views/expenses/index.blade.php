@@ -13,14 +13,23 @@
                 <input type="date" name="expense_date" value="{{ date('Y-m-d') }}" required style="width: 100%; padding: 8px 12px; border: 1px solid var(--border); border-radius: 6px;">
             </div>
 
-            <div>
-                <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 6px;">Category</label>
-                <select name="category" required style="width: 100%; padding: 8px 12px; border: 1px solid var(--border); border-radius: 6px;">
-                    <option value="ingredients">Ingredients (Grocery/Palengke)</option>
-                    <option value="packaging">Packaging</option>
-                    <option value="other">Other</option>
-                </select>
-            </div>
+           <div>
+    <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 6px;">Category</label>
+    <select name="category" required style="width: 100%; padding: 8px 12px; border: 1px solid var(--border); border-radius: 6px;">
+        <optgroup label="Cost of Goods Sold (COGS)">
+            <option value="ingredients">Ingredients (Raw Materials / Grocery)</option>
+            <option value="packaging">Packaging & Supplies</option>
+        </optgroup>
+        <optgroup label="Operating Expenses (OpEx)">
+            <option value="utilities">Utilities (Water / Electricity / Gas)</option>
+            <option value="rent">Rent / Space Lease</option>
+            <option value="transport">Transportation / Delivery</option>
+            <option value="labor">Labor / Staff Allowance</option>
+            <option value="maintenance">Maintenance & Repairs</option>
+            <option value="other">Other Operational Costs</option>
+        </optgroup>
+    </select>
+</div>
 
             <div>
                 <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 6px;">Description</label>
