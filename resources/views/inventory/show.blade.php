@@ -46,7 +46,7 @@
             </div>
 
             <!-- Adjust Inventory (Admin only) -->
-            @if(auth()->user()->isAdmin())
+            @can('admin')
                 <div class="bg-white rounded-2xl shadow p-6">
                     <h3 class="font-bold text-[#0f2d52] mb-4">Adjust Inventory</h3>
                     <form action="{{ route('inventory.adjust', $inventory) }}" method="POST"

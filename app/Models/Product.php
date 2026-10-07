@@ -31,9 +31,9 @@ class Product extends Model
     // Materials (inventory items) used in this product - the recipe
     public function materials()
     {
-        return $this->belongsToMany(Inventory::class, 'product_materials')
-                    ->withPivot('quantity_used')
-                    ->withTimestamps();
+       return $this->belongsToMany(Inventory::class, 'product_raw_materials')
+            ->withPivot('quantity_needed') // Uses quantity_needed from product_raw_materials
+            ->withTimestamps();
     }
 
     public function orderItems()
