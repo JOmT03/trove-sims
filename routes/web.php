@@ -110,3 +110,26 @@ Route::middleware(['auth', 'admin', \App\Http\Middleware\EnsureActive::class])->
     Route::patch('/inventory/{inventory}/archive', [\App\Http\Controllers\InventoryController::class, 'archive'])->name('inventory.archive');
     Route::patch('/inventory/{inventory}/restore', [\App\Http\Controllers\InventoryController::class, 'restore'])->name('inventory.restore');
 });
+
+// ===== Settings: Backup & Restore (Owner only) =====
+Route::middleware(['auth', \App\Http\Middleware\EnsureActive::class])->group(function () {
+    Route::get('/settings/backup/download', [\App\Http\Controllers\SettingsController::class, 'downloadBackup'])->name('settings.backup.download');
+    Route::post('/settings/backup/restore', [\App\Http\Controllers\SettingsController::class, 'restoreBackup'])->name('settings.backup.restore');
+});
+
+// ===== Recipes & Production (Owner & Manager) =====
+Route::middleware(['auth', 'admin', \App\Http\Middleware\EnsureActive::class])->group(function () {
+    Route::get('/products/{product}/recipes', [\App\Http\Controllers\RecipeController::class, 'index'])->name('products.recipes');
+    Route::post('/products/{product}/produce', [\App\Http\Controllers\RecipeController::class, 'produce'])->name('products.produce');
+    Route::post('/products/{product}/recipes', [\App\Http\Controllers\RecipeController::class, 'storeVersion'])->name('products.recipes.store');
+    Route::put('/products/{product}/recipes/{version}', [\App\Http\Controllers\RecipeController::class, 'updateVersion'])->name('products.recipes.update');
+    Route::post('/products/{product}/recipes/{version}/activate', [\App\Http\Controllers\RecipeController::class, 'activate'])->name('products.recipes.activate');
+    Route::post('/products/{product}/recipes/{version}/archive', [\App\Http\Controllers\RecipeController::class, 'archive'])->name('products.recipes.archive');
+    Route::post('/products/{product}/recipes/{version}/restore', [\App\Http\Controllers\RecipeController::class, 'restore'])->name('products.recipes.restore');
+    Route::delete('/products/{product}/recipes/{version}', [\App\Http\Controllers\RecipeController::class, 'destroy'])->name('products.recipes.destroy');
+});
+
+// ===== Low Stock / Restock Report (Owner & Manager) =====
+Route::middleware(['auth', 'admin', \App\Http\Middleware\EnsureActive::class])->group(function () {
+    Route::get('/inventory-report/low-stock', [\App\Http\Controllers\InventoryController::class, 'lowStockReport'])->name('inventory.low-stock-report');
+});

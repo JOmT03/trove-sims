@@ -3,21 +3,15 @@
 <x-slot name="subheader">{{ $inventory->item_name }}</x-slot>
 
 <style>
-.card{background:#fff;border-radius:14px;box-shadow:0 1px 6px rgba(0,0,0,.07);padding:24px;max-width:680px;}
+.card{background:#fff;border-radius:14px;box-shadow:0 1px 6px rgba(0,0,0,.07);padding:24px;max-width:640px;}
 .form-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
 label{display:block;font-size:13px;font-weight:700;color:#374151;margin-bottom:6px;}
-input,select{width:100%;padding:10px 13px;border:1.5px solid #e2e8f0;border-radius:9px;font-size:14px;background:#f8fafc;font-family:inherit;}
-input:focus,select:focus{border-color:#D9782C;background:#fff;outline:none;}
+input,select{width:100%;padding:10px 13px;border:1.5px solid #e2e8f0;border-radius:9px;font-size:14px;background:#f8fafc;}
+input:focus,select:focus{border-color:#D9782C;background:#fff;}
 .btn{padding:10px 20px;border-radius:9px;font-size:13px;font-weight:700;border:none;cursor:pointer;text-decoration:none;}
 .btn-gold{background:#D9782C;color:#fff;}
 .btn-outline{background:#f3f4f6;color:#374151;border:1px solid #e5e7eb;}
-.hint{font-size:11.5px;color:#8A7460;margin-top:6px;}
 </style>
-
-@if($errors->any())
-<div style="background:#FBE4DA;border:1px solid #fecaca;color:#991b1b;padding:12px 16px;border-radius:9px;margin-bottom:16px;max-width:680px;font-size:13px;">
-<strong>Please fix:</strong><ul style="margin:6px 0 0 18px;">@foreach($errors->all() as $e)<li>{{ $e }}</li>@endforeach</ul></div>
-@endif
 
 <form method="POST" action="{{ route('inventory.update', $inventory) }}" class="card">
 @csrf
@@ -25,7 +19,7 @@ input:focus,select:focus{border-color:#D9782C;background:#fff;outline:none;}
 <div class="form-grid">
     <div style="grid-column:1/-1;">
         <label>Item Name</label>
-        <input type="text" name="item_name" value="{{ old('item_name', $inventory->item_name) }}" required>
+        <input type="text" name="item_name" value="{{ $inventory->item_name }}" required>
     </div>
     <div>
         <label>Category</label>
@@ -44,18 +38,13 @@ input:focus,select:focus{border-color:#D9782C;background:#fff;outline:none;}
         </select>
     </div>
     <div>
-        <label>Current Quantity (On Hand)</label>
-        <input type="number" name="quantity_on_hand" step="0.01" min="0" value="{{ old('quantity_on_hand', $inventory->quantity_on_hand) }}" required>
-        <div class="hint">Correcting this logs an adjustment in the item's history.</div>
+        <label>Minimum Stock</label>
+        <input type="number" name="minimum_stock" step="0.01" min="0" value="{{ $inventory->minimum_stock }}" required>
     </div>
     <div>
-        <label>Minimum Stock</label>
-        <input type="number" name="minimum_stock" step="0.01" min="0" value="{{ old('minimum_stock', $inventory->minimum_stock) }}" required>
-    </div>
-    <div style="grid-column:1/-1;">
         <label>Site</label>
         <select name="site_id">
-            <option value="">- Unassigned -</option>
+            <option value="">— Unassigned —</option>
             @foreach($sites as $site)
                 <option value="{{ $site->id }}" {{ $inventory->site_id == $site->id ? 'selected' : '' }}>{{ $site->site_name }}</option>
             @endforeach

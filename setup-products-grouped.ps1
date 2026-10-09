@@ -1,3 +1,24 @@
+# ============================================================
+#  TROVE - Products grouped by category (section headers per category)
+#     powershell -ExecutionPolicy Bypass -File setup-products-grouped.ps1
+# ============================================================
+$ErrorActionPreference = "Stop"
+$root = $PSScriptRoot
+if ([string]::IsNullOrEmpty($root)) { $root = Get-Location }
+if (-not (Test-Path (Join-Path $root "artisan"))) {
+    Write-Host "ERROR: run from your project root (where artisan is)." -ForegroundColor Red; exit 1
+}
+$Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+Write-Host "Rebuilding Products page as grouped-by-category..." -ForegroundColor Yellow
+
+$viewDir = Join-Path $root "resources\views\products"
+$idxPath = Join-Path $viewDir "index.blade.php"
+if (Test-Path $idxPath) {
+    Copy-Item $idxPath (Join-Path $viewDir "index.blade.php.bak") -Force
+    Write-Host "  backed up index.blade.php -> index.blade.php.bak" -ForegroundColor DarkGray
+}
+
+$view = @'
 <x-app-layout>
 <x-slot name="header">Products</x-slot>
 <x-slot name="subheader">Trove menu - grouped by category</x-slot>
@@ -174,3 +195,10 @@ function toggleFilter(e){ e.stopPropagation(); var fm = document.getElementById(
 document.addEventListener('click', function(){ closeAllMenus(); var fm=document.getElementById('filterMenu'); if(fm) fm.hidden = true; });
 </script>
 </x-app-layout>
+'@
+[System.IO.File]::WriteAllText($idxPath, $view, $Utf8NoBom)
+Write-Host "  wrote resources\views\products\index.blade.php (grouped by category)" -ForegroundColor Green
+
+php artisan view:clear
+Write-Host ""
+Write-Host "DONE - Products are now grouped by category. Refresh (Ctrl+F5)." -ForegroundColor Cyan

@@ -1,3 +1,146 @@
+# ============================================================
+#  TROVE - Settings module (Profile -> Settings: Profile / Security / Backup / Help)
+#     powershell -ExecutionPolicy Bypass -File setup-settings-module.ps1
+# ============================================================
+$ErrorActionPreference = "Stop"
+$root = $PSScriptRoot
+if ([string]::IsNullOrEmpty($root)) { $root = Get-Location }
+if (-not (Test-Path (Join-Path $root "artisan"))) {
+    Write-Host "ERROR: run from your project root (where artisan is)." -ForegroundColor Red; exit 1
+}
+$Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+Write-Host "Setting up the Settings module..." -ForegroundColor Yellow
+
+# ---- 1. SettingsController (backup download + restore, Owner only) ----
+$ctrl = @'
+<?php
+
+namespace App\Http\Controllers;
+
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+
+class SettingsController extends Controller
+{
+    private function ownerOnly(): void
+    {
+        abort_unless(auth()->check() && auth()->user()->role === 'Owner', 403, 'Owner only.');
+    }
+
+    public function downloadBackup()
+    {
+        $this->ownerOnly();
+
+        $sql  = $this->buildSqlDump();
+        $base = 'trove_backup_' . date('Y-m-d_His');
+
+        if (class_exists('\ZipArchive')) {
+            $zipPath = storage_path('app/' . $base . '.zip');
+            $zip = new \ZipArchive();
+            if ($zip->open($zipPath, \ZipArchive::CREATE | \ZipArchive::OVERWRITE) === true) {
+                $zip->addFromString('database.sql', $sql);
+                $imgDir = storage_path('app/public/products');
+                if (is_dir($imgDir)) {
+                    foreach (glob($imgDir . DIRECTORY_SEPARATOR . '*') as $f) {
+                        if (is_file($f)) {
+                            $zip->addFile($f, 'photos/' . basename($f));
+                        }
+                    }
+                }
+                $zip->close();
+                return response()->download($zipPath, $base . '.zip')->deleteFileAfterSend(true);
+            }
+        }
+
+        // Fallback: plain .sql
+        return response($sql, 200, [
+            'Content-Type'        => 'application/sql',
+            'Content-Disposition' => 'attachment; filename="' . $base . '.sql"',
+        ]);
+    }
+
+    private function buildSqlDump(): string
+    {
+        $pdo = DB::getPdo();
+        $out  = "-- Trove backup " . date('Y-m-d H:i:s') . "\n";
+        $out .= "SET FOREIGN_KEY_CHECKS=0;\n\n";
+
+        $tables = [];
+        foreach (DB::select('SHOW TABLES') as $row) {
+            $vals = array_values((array) $row);
+            $tables[] = $vals[0];
+        }
+
+        foreach ($tables as $table) {
+            $createRow = DB::select('SHOW CREATE TABLE `' . $table . '`');
+            $createArr = (array) $createRow[0];
+            $createSql = $createArr['Create Table'] ?? ($createArr['Create View'] ?? '');
+            if ($createSql === '') { continue; }
+
+            $out .= "DROP TABLE IF EXISTS `" . $table . "`;\n";
+            $out .= $createSql . ";\n\n";
+
+            $rows = DB::select('SELECT * FROM `' . $table . '`');
+            foreach ($rows as $r) {
+                $r    = (array) $r;
+                $cols = array_map(function ($c) { return '`' . $c . '`'; }, array_keys($r));
+                $vals = array_map(function ($v) use ($pdo) {
+                    if (is_null($v)) return 'NULL';
+                    return $pdo->quote((string) $v);
+                }, array_values($r));
+                $out .= "INSERT INTO `" . $table . "` (" . implode(',', $cols) . ") VALUES (" . implode(',', $vals) . ");\n";
+            }
+            $out .= "\n";
+        }
+
+        $out .= "SET FOREIGN_KEY_CHECKS=1;\n";
+        return $out;
+    }
+
+    public function restoreBackup(Request $request)
+    {
+        $this->ownerOnly();
+        $request->validate(['backup' => 'required|file']);
+
+        $file = $request->file('backup');
+        $ext  = strtolower($file->getClientOriginalExtension());
+        $sql  = null;
+
+        try {
+            if ($ext === 'zip' && class_exists('\ZipArchive')) {
+                $zip = new \ZipArchive();
+                if ($zip->open($file->getRealPath()) === true) {
+                    $sql = $zip->getFromName('database.sql');
+                    $zip->close();
+                }
+                if ($sql === false || $sql === null) {
+                    return back()->with('error', 'Could not find database.sql inside the backup zip.');
+                }
+            } else {
+                $sql = file_get_contents($file->getRealPath());
+            }
+
+            DB::unprepared($sql);
+            return back()->with('success', 'Backup restored successfully. You may need to sign in again.');
+        } catch (\Exception $e) {
+            \Log::error('Restore failed: ' . $e->getMessage());
+            return back()->with('error', 'Restore failed: ' . $e->getMessage());
+        }
+    }
+}
+'@
+$p = Join-Path $root "app\Http\Controllers\SettingsController.php"
+[System.IO.File]::WriteAllText($p, $ctrl, $Utf8NoBom)
+Write-Host "  wrote app\Http\Controllers\SettingsController.php" -ForegroundColor Green
+
+# ---- 2. Settings view (reframe profile/edit.blade.php; keep Breeze partials) ----
+$viewDir = Join-Path $root "resources\views\profile"
+$viewPath = Join-Path $viewDir "edit.blade.php"
+if (Test-Path $viewPath) {
+    Copy-Item $viewPath (Join-Path $viewDir "edit.blade.php.bak") -Force
+    Write-Host "  backed up original edit.blade.php -> edit.blade.php.bak" -ForegroundColor DarkGray
+}
+$view = @'
 <x-app-layout>
 <x-slot name="header">Settings</x-slot>
 <x-slot name="subheader">Manage your account, security, and help</x-slot>
@@ -104,3 +247,73 @@
 })();
 </script>
 </x-app-layout>
+'@
+[System.IO.File]::WriteAllText($viewPath, $view, $Utf8NoBom)
+Write-Host "  wrote resources\views\profile\edit.blade.php (sectioned Settings)" -ForegroundColor Green
+
+# ---- 3. Routes: add backup download/restore (guarded) ----
+$webPath = Join-Path $root "routes\web.php"
+$web = [System.IO.File]::ReadAllText($webPath)
+if ($web -notmatch "settings\.backup\.download") {
+    $routes = @'
+
+// ===== Settings: Backup & Restore (Owner only) =====
+Route::middleware(['auth', \App\Http\Middleware\EnsureActive::class])->group(function () {
+    Route::get('/settings/backup/download', [\App\Http\Controllers\SettingsController::class, 'downloadBackup'])->name('settings.backup.download');
+    Route::post('/settings/backup/restore', [\App\Http\Controllers\SettingsController::class, 'restoreBackup'])->name('settings.backup.restore');
+});
+'@
+    $web = $web.TrimEnd() + "`r`n" + $routes + "`r`n"
+    [System.IO.File]::WriteAllText($webPath, $web, $Utf8NoBom)
+    Write-Host "  web.php: added backup routes" -ForegroundColor Green
+} else {
+    Write-Host "  web.php: backup routes already present (skipped)" -ForegroundColor DarkGray
+}
+
+# ---- 4. Navbar: rename Profile -> Settings (line that links to profile.edit) ----
+$appPath = Join-Path $root "resources\views\layouts\app.blade.php"
+if (Test-Path $appPath) {
+    $app = [System.IO.File]::ReadAllText($appPath)
+    $lines = [regex]::Split($app, "\r?\n")
+    $changed = 0
+    for ($i = 0; $i -lt $lines.Count; $i++) {
+        if ($lines[$i] -match "profile\.edit" -and $lines[$i] -cmatch "Profile") {
+            $lines[$i] = $lines[$i] -creplace "Profile", "Settings"
+            $changed++
+        }
+    }
+    if ($changed -gt 0) {
+        $app = ($lines -join "`r`n")
+        [System.IO.File]::WriteAllText($appPath, $app, $Utf8NoBom)
+        Write-Host "  navbar: renamed Profile -> Settings ($changed line)" -ForegroundColor Green
+    } else {
+        Write-Host "  navbar: could not find the Profile nav label - rename it to Settings manually." -ForegroundColor Yellow
+    }
+} else {
+    Write-Host "  navbar: app.blade.php not found - skipped." -ForegroundColor Yellow
+}
+
+# ---- 5. public/docs for the user manual PDF ----
+$docsDir = Join-Path $root "public\docs"
+New-Item -ItemType Directory -Force -Path $docsDir | Out-Null
+$dl = Join-Path $env:USERPROFILE "Downloads\Trove_User_Manual.pdf"
+$dest = Join-Path $docsDir "Trove_User_Manual.pdf"
+if ((Test-Path $dl) -and -not (Test-Path $dest)) {
+    Copy-Item $dl $dest -Force
+    Write-Host "  copied Trove_User_Manual.pdf from Downloads into public\docs" -ForegroundColor Green
+} elseif (Test-Path $dest) {
+    Write-Host "  public\docs\Trove_User_Manual.pdf already present" -ForegroundColor DarkGray
+} else {
+    Write-Host "  NOTE: put Trove_User_Manual.pdf into public\docs\ so the Help button works." -ForegroundColor Yellow
+}
+
+# ---- 6. Clear caches ----
+Write-Host ""
+php artisan route:clear
+php artisan view:clear
+php artisan config:clear
+php artisan optimize:clear
+
+Write-Host ""
+Write-Host "DONE - Profile is now Settings (Profile / Security / Backup / Help)." -ForegroundColor Cyan
+Write-Host "  Open Settings from the navbar, then refresh (Ctrl+F5)." -ForegroundColor White

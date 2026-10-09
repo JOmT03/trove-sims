@@ -63,7 +63,7 @@ tr.tot td{font-weight:800;background:#FDF6EC;}
 
 <div class="dash">
 <section class="kpis">
-    <a href="{{ Route::has('branch-transfers.index') ? route('branch-transfers.index') : '#' }}" class="kpi a"><div class="l">Batch Sent (This Week)</div><div class="v">{{ $batchSent }} <span style="font-size:14px;color:#8A7460;">pcs</span></div><div class="s">to Jacinto</div><span class="kpi-go">View Branch Transfers &rarr;</span></a>
+    <a href="{{ Route::has('branch-transfers.index') ? route('branch-transfers.index') : '#' }}" class="kpi a"><div class="l">Batches Sent</div><div class="v">{{ $totalBatches }} <span style="font-size:14px;color:#8A7460;">{{ $totalBatches == 1 ? 'batch' : 'batches' }}</span></div><div class="s">dispatched to Jacinto</div><span class="kpi-go">View Branch Transfers &rarr;</span></a>
     <a href="{{ Route::has('reports.index') ? route('reports.index') : '#' }}" class="kpi b"><div class="l">Net Sold (This Week)</div><div class="v">{{ $netSoldQty }} <span style="font-size:14px;color:#8A7460;">pcs</span></div><div class="s">&#8369;{{ number_format($netSoldRevenue,2) }} &middot; {{ $returnedQty }} returned</div><span class="kpi-go">View Reports &rarr;</span></a>
     <a href="{{ route('inventory.index') }}" class="kpi c"><div class="l">Low Ingredients</div><div class="v">{{ $lowCount }}</div><div class="s">need restock at Matina</div><span class="kpi-go">View Inventory &rarr;</span></a>
     <a href="{{ route('products.index') }}" class="kpi d"><div class="l">Finished Stock</div><div class="v">{{ $finishedStock }} <span style="font-size:14px;color:#8A7460;">pcs</span></div><div class="s">across {{ $totalProducts }} products</div><span class="kpi-go">View Products &rarr;</span></a>

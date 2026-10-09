@@ -25,6 +25,9 @@ class DashboardController extends Controller
         $netSoldQty     = $weekBatches->sum(fn ($b) => $b->totalNetSold());
         $netSoldRevenue = $weekBatches->sum(fn ($b) => $b->totalRevenue());
 
+        // Total batches ever dispatched (sent + reconciled)
+        $totalBatches = Batch::count();
+
         //  Inventory (raw materials) 
         $inventories = Inventory::orderBy('item_name')->get();
         $lowCount    = $inventories->filter(fn ($i) => $i->isLowStock())->count();
@@ -73,7 +76,7 @@ class DashboardController extends Controller
             ->get();
 
         return view('dashboard', compact(
-            'batchSent', 'returnedQty', 'netSoldQty', 'netSoldRevenue',
+            'batchSent', 'totalBatches', 'returnedQty', 'netSoldQty', 'netSoldRevenue',
             'lowCount', 'stockLevels', 'finishedStock', 'totalProducts',
             'latestBatch', 'canBake', 'maxBake', 'movements'
         ));

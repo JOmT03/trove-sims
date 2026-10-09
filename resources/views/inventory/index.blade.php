@@ -103,6 +103,7 @@ tr.arch .item{color:var(--muted);}
         </div>
         @if($view === 'active')
             @can('admin')
+                <a class="addbtn" href="{{ route('inventory.low-stock-report') }}" target="_blank" style="background:#fff;color:var(--gold);border:1px solid var(--border);margin-right:8px;">Restock List</a>
                 <a class="addbtn" href="{{ route('inventory.create') }}">+ Add Item</a>
             @endcan
         @endif
