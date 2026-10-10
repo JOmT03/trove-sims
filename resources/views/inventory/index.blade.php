@@ -37,6 +37,8 @@
 .inv-search input{width:100%;padding:11px 14px 11px 40px;border:1px solid var(--border);border-radius:999px;font-size:14px;background:var(--white);color:var(--text);font-family:var(--f-body);}
 .inv-search input:focus{outline:none;border-color:var(--gold);box-shadow:0 0 0 3px rgba(217,120,44,.14);}
 .addbtn{background:var(--gold);color:#fff;border:none;border-radius:9px;padding:10px 16px;font-size:13px;font-weight:700;cursor:pointer;text-decoration:none;white-space:nowrap;}
+.inv-catfilter{padding:10px 14px;border:1px solid var(--border);border-radius:999px;font-size:13px;background:var(--white);color:var(--text);font-family:var(--f-body);cursor:pointer;}
+.inv-catfilter:focus{outline:none;border-color:var(--gold);box-shadow:0 0 0 3px rgba(217,120,44,.14);}
 .inv-card{background:var(--white);border:1px solid var(--border);border-radius:16px;box-shadow:0 1px 6px rgba(74,44,23,.06);overflow:visible;}
 .inv-card table{width:100%;border-collapse:collapse;font-size:13px;}
 .inv-card th{text-align:left;font-size:10.5px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);padding:12px 16px;background:var(--bg);font-weight:700;}
@@ -101,6 +103,7 @@ tr.arch .item{color:var(--muted);}
             <svg stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-4.35-4.35M17 11a6 6 0 11-12 0 6 6 0 0112 0z"/></svg>
             <input type="text" id="search" placeholder="Search items..." oninput="applyFilters()">
         </div>
+        <select id="catfilter" class="inv-catfilter" onchange="applyFilters()"><option value="">All Categories</option></select>
         @if($view === 'active')
             @can('admin')
                 <a class="addbtn" href="{{ route('inventory.low-stock-report') }}" target="_blank" style="background:#fff;color:var(--gold);border:1px solid var(--border);margin-right:8px;">Restock List</a>
@@ -120,7 +123,7 @@ tr.arch .item{color:var(--muted);}
                     $labels=['ok'=>'OK','low'=>'Low','crit'=>'Critical','out'=>'Out'];
                     $archived = $view === 'archived';
                 @endphp
-                <tr data-tier="{{ $t }}" data-dmg="{{ $dmg>0?'1':'0' }}" data-name="{{ strtolower($inv->item_name) }}" class="{{ $archived ? 'arch' : '' }}">
+                <tr data-tier="{{ $t }}" data-dmg="{{ $dmg>0?'1':'0' }}" data-name="{{ strtolower($inv->item_name) }}" data-cat="{{ strtolower($inv->category) }}" class="{{ $archived ? 'arch' : '' }}">
                     <td>
                         <div class="item">{{ $inv->item_name }}
                             @if($archived)
@@ -196,13 +199,15 @@ function setFilter(btn){
 }
 function applyFilters(){
     var term=(document.getElementById('search').value||'').toLowerCase().trim();
+    var _cf=document.getElementById('catfilter'); window.__catSel=_cf?_cf.value.toLowerCase():'';
     var shown=0;
     document.querySelectorAll('.inv-card tbody tr').forEach(function(r){
         if(!r.getAttribute('data-name')) return;
         var t=r.getAttribute('data-tier'), d=r.getAttribute('data-dmg'), nm=r.getAttribute('data-name')||'';
         var okFilter = curFilter==='all' || (curFilter==='low' && (t==='low'||t==='crit'||t==='out')) || (curFilter==='dmg' && d==='1');
         var okName = nm.indexOf(term)!==-1;
-        var show = okFilter && okName;
+        var okCat = !window.__catSel || (r.getAttribute('data-cat')||'')===window.__catSel;
+        var show = okFilter && okName && okCat;
         r.style.display = show?'':'none'; if(show) shown++;
     });
     var nr=document.getElementById('noresult'); if(nr) nr.style.display = shown===0?'block':'none';
@@ -210,5 +215,6 @@ function applyFilters(){
 function closeMenus(){ document.querySelectorAll('.menu').forEach(function(m){m.hidden=true;}); }
 function toggleMenu(e,btn){ e.stopPropagation(); var m=btn.nextElementSibling; var w=m.hidden; closeMenus(); m.hidden=!w; }
 document.addEventListener('click', closeMenus);
+(function(){var sel=document.getElementById("catfilter");if(!sel)return;var seen={};document.querySelectorAll(".inv-card tbody tr[data-cat]").forEach(function(r){var k=r.getAttribute("data-cat");if(!k||seen[k])return;seen[k]=1;var o=document.createElement("option");o.value=k;o.textContent=k.replace(/\b\w/g,function(m){return m.toUpperCase();});sel.appendChild(o);});})();
 </script>
 </x-app-layout>
