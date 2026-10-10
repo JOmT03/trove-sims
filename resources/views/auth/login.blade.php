@@ -131,9 +131,7 @@
                 <div class="logo-sub">Food &amp; Cake Shop</div>
             </div>
         </a>
-        <a href="{{ route('register') }}" class="nav-register">
-            No account? <strong>Register here</strong>
-        </a>
+
     </header>
 
     <main>
