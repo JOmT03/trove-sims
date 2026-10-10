@@ -3,6 +3,12 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="manifest" href="/manifest.webmanifest">
+    <meta name="theme-color" content="#4A2C17">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-title" content="Trove">
+    <link rel="apple-touch-icon" href="/icons/trove-192.png">
     <title>Log In - Trove</title>
     @vite(['resources/css/app.css', 'resources/js/app.js'])
     <style>
@@ -47,6 +53,13 @@
         .btn svg{ stroke:#fff; }
         @media (max-width:820px){ .split{ grid-template-columns:1fr; } .hero{ padding:40px 30px; } .hero h1{ font-size:34px; } }
     </style>
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', function () {
+          navigator.serviceWorker.register('/sw.js').catch(function () {});
+        });
+      }
+    </script>
 </head>
 <body>
     <div class="topbar">

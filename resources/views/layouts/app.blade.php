@@ -3,6 +3,12 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="manifest" href="/manifest.webmanifest">
+    <meta name="theme-color" content="#4A2C17">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-title" content="Trove">
+    <link rel="apple-touch-icon" href="/icons/trove-192.png">
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>{{ config('app.name', 'Trove') }}</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -61,6 +67,13 @@
         .role-badge{background:var(--navy);color:var(--white);font-size:11px;font-weight:600;padding:4px 10px;border-radius:20px;letter-spacing:.5px}
         .page-content{padding:28px 32px;flex:1}
     </style>
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', function () {
+          navigator.serviceWorker.register('/sw.js').catch(function () {});
+        });
+      }
+    </script>
 </head>
 <body>
 
