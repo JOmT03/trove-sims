@@ -7,7 +7,7 @@ use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\ExpenseController;
 use Illuminate\Support\Facades\Route;
 
-Route::get('/', fn() => view('welcome'))->name('welcome');
+Route::get('/', fn() => auth()->check() ? redirect()->route('dashboard') : redirect()->route('login'))->name('welcome');
 
 Route::middleware(['auth', \App\Http\Middleware\EnsureActive::class])->group(function () {
 
