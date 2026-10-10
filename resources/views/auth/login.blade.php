@@ -8,7 +8,7 @@
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-title" content="Trove">
-    <link rel="apple-touch-icon" href="/icons/trove-192.png">
+    <link rel="apple-touch-icon" href="/trove-192.png">
     <title>Log In - Trove</title>
     @vite(['resources/css/app.css', 'resources/js/app.js'])
     <style>

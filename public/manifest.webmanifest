@@ -9,7 +9,7 @@
   "background_color": "#FDF6EC",
   "theme_color": "#4A2C17",
   "icons": [
-    { "src": "/icons/trove-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
-    { "src": "/icons/trove-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+    { "src": "/trove-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "/trove-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
   ]
 }

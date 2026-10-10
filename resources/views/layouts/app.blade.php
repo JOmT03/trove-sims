@@ -8,7 +8,7 @@
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-title" content="Trove">
-    <link rel="apple-touch-icon" href="/icons/trove-192.png">
+    <link rel="apple-touch-icon" href="/trove-192.png">
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>{{ config('app.name', 'Trove') }}</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
