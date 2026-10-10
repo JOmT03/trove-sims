@@ -25,7 +25,7 @@ class InventoryController extends Controller
         if ($view === 'archived') { $q->whereNotNull('archived_at'); }
         else { $q->whereNull('archived_at'); }
 
-        $inventories = $q->latest()->get();
+        $inventories = $q->orderBy('id')->get();
         $lowStock = $inventories->filter(fn($i) => $i->isLowStock())->count();
         $damaged  = $inventories->sum('quantity_damaged');
 
