@@ -39,34 +39,54 @@ class CommissionController extends Controller
 
     public function store(Request $request)
     {
+        // drop blank product rows before validating (lets fully-custom orders through)
+        $request->merge([
+            'items' => array_values(array_filter((array) $request->input('items', []), function ($it) {
+                return is_array($it) && !empty($it['product_id']);
+            })),
+        ]);
+
         $validated = $request->validate([
             'customer_name'      => 'required|string|max:255',
-            'client_type'        => 'required|in:individual,institutional',
+            'client_type'        => 'nullable|string|max:50',
             'order_type'         => 'nullable|string|max:255',
             'needed_by_date'     => 'nullable|date',
             'deposit_amount'     => 'nullable|numeric|min:0',
+            'custom_amount'      => 'nullable|numeric|min:0',
             'design_description' => 'nullable|string',
             'site_id'            => 'nullable|exists:sites,id',
-            'items'              => 'required|array|min:1',
+            'items'              => 'nullable|array',
             'items.*.product_id' => 'required|exists:products,id',
             'items.*.quantity'   => 'required|integer|min:1',
             'items.*.price'      => 'required|numeric|min:0',
         ]);
 
+        $items        = $validated['items'] ?? [];
+        $customAmount = $validated['custom_amount'] ?? 0;
+
+        if (count($items) === 0 && $customAmount <= 0) {
+            return back()->withInput()->with('error', 'Add at least one product or enter a custom order amount.');
+        }
+
         try {
             DB::beginTransaction();
 
             $total = 0;
-            foreach ($validated['items'] as $it) {
+            foreach ($items as $it) {
                 $total += $it['quantity'] * $it['price'];
             }
+            $total += $customAmount;   // custom cake with no catalog product
+
             $deposit = $validated['deposit_amount'] ?? 0;
+
+            // single-branch: resolve a real site so the NOT NULL site_id is satisfied
+            $defaultSiteId = $validated['site_id'] ?? (auth()->user()->site_id ?? Site::query()->value('id'));
 
             $commission = Commission::create([
                 'user_id'            => auth()->id(),
-                'site_id'            => $validated['site_id'] ?? null,
+                'site_id'            => $defaultSiteId,
                 'customer_name'      => $validated['customer_name'],
-                'client_type'        => $validated['client_type'],
+                'client_type'        => $validated['client_type'] ?? 'individual',
                 'order_type'         => $validated['order_type'] ?? null,
                 'design_description' => $validated['design_description'] ?? null,
                 'needed_by_date'     => $validated['needed_by_date'] ?? null,
@@ -75,7 +95,7 @@ class CommissionController extends Controller
                 'status'             => $deposit > 0 ? 'Confirmed' : 'Inquiry',
             ]);
 
-            foreach ($validated['items'] as $it) {
+            foreach ($items as $it) {
                 OrderItem::create([
                     'order_id'   => $commission->id,
                     'product_id' => $it['product_id'],

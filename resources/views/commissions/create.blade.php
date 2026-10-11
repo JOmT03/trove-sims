@@ -9,10 +9,6 @@
 label{display:block;font-size:13px;font-weight:700;color:#374151;margin-bottom:6px;}
 input,select,textarea{width:100%;padding:10px 13px;border:1.5px solid #e2e8f0;border-radius:9px;font-size:14px;background:#f8fafc;font-family:inherit;}
 textarea{min-height:70px;resize:vertical;}
-.radio-row{display:flex;gap:10px;}
-.radio-opt{flex:1;border:1.5px solid #e2e8f0;border-radius:9px;padding:12px;text-align:center;cursor:pointer;font-size:13px;font-weight:700;color:#8A7460;}
-.radio-opt input{display:none;}
-.radio-opt.sel{border-color:#4A2C17;background:#4A2C17;color:#fff;}
 table{width:100%;border-collapse:collapse;font-size:13px;}
 th{text-align:left;font-size:11px;text-transform:uppercase;color:#8A7460;background:#FDF6EC;padding:9px 12px;}
 td{padding:8px 12px;border-bottom:1px solid #f3f4f6;}
@@ -21,6 +17,14 @@ td{padding:8px 12px;border-bottom:1px solid #f3f4f6;}
 .addrow{padding:8px 14px;border:1.5px dashed #EDE0D0;border-radius:9px;background:#FDF6EC;color:#8A7460;font-size:13px;font-weight:600;cursor:pointer;}
 .alert-err{background:#FBE4DA;border:1px solid #fecaca;color:#991b1b;padding:12px 16px;border-radius:9px;margin-bottom:16px;font-size:13px;}
 .rm{background:none;border:none;color:#ef4444;cursor:pointer;font-size:15px;}
+.totcell{font-weight:700;font-variant-numeric:tabular-nums;color:#2E1C10;}
+.sumrow{display:flex;justify-content:space-between;align-items:center;padding:6px 0;font-size:14px;}
+.sumrow .lbl{color:#8A7460;font-weight:700;}
+.sumrow .val{font-weight:800;color:#2E1C10;font-variant-numeric:tabular-nums;}
+.grand .lbl,.grand .val{font-size:17px;}
+.hint{font-size:12px;color:#8A7460;margin-top:6px;}
+.secnote{font-size:12px;color:#8A7460;margin:-6px 0 12px;}
+.divline{border:none;border-top:1px solid #EDE0D0;margin:14px 0;}
 </style>
 
 @php
@@ -34,6 +38,7 @@ td{padding:8px 12px;border-bottom:1px solid #f3f4f6;}
 <div class="alert-err"><strong>Please fix:</strong>
 <ul style="margin:6px 0 0 18px;">@foreach($errors->all() as $e)<li>{{ $e }}</li>@endforeach</ul></div>
 @endif
+@if(session('error'))<div class="alert-err">{{ session('error') }}</div>@endif
 
 <form method="POST" action="{{ route('commissions.store') }}">
 @csrf
@@ -41,45 +46,52 @@ td{padding:8px 12px;border-bottom:1px solid #f3f4f6;}
 <div class="card">
     <div class="card-title">Client &amp; Order</div>
     <div class="grid">
-        <div style="grid-column:1/-1;">
-            <label>Client Type *</label>
-            <div class="radio-row">
-                <label class="radio-opt sel" id="opt-ind"><input type="radio" name="client_type" value="individual" checked onchange="pickType('ind')"> Individual (walk-in / custom)</label>
-                <label class="radio-opt" id="opt-inst"><input type="radio" name="client_type" value="institutional" onchange="pickType('inst')"> Institutional (UM, Stella Maris)</label>
-            </div>
-        </div>
         <div>
             <label>Client / Institution Name *</label>
             <input type="text" name="customer_name" value="{{ old('customer_name') }}" placeholder="e.g. Maria Santos / University of Mindanao" required>
         </div>
         <div>
-            <label>Cake / Order Type</label>
+            <label>Order Type</label>
             <input type="text" name="order_type" value="{{ old('order_type') }}" placeholder="e.g. 2-Tier Birthday, 200 Cupcakes">
         </div>
         <div>
             <label>Needed By (due date)</label>
             <input type="date" name="needed_by_date" value="{{ old('needed_by_date') }}">
         </div>
-        <div>
-            <label>Downpayment (&#8369;)</label>
-            <input type="number" step="0.01" min="0" name="deposit_amount" value="{{ old('deposit_amount', 0) }}">
+        <div style="grid-column:1/-1;">
+            <label>Description</label>
+            <textarea name="design_description" placeholder="Colors, theme, message on cake, size, custom order details...">{{ old('design_description') }}</textarea>
         </div>
         <div style="grid-column:1/-1;">
-            <label>Design Description</label>
-            <textarea name="design_description" placeholder="Colors, theme, message on cake, size...">{{ old('design_description') }}</textarea>
+            <label>Custom Order Amount (&#8369;)</label>
+            <input type="number" step="0.01" min="0" name="custom_amount" id="customAmount" value="{{ old('custom_amount', 0) }}" oninput="recalc()" placeholder="0.00">
+            <div class="hint">For a custom cake with no catalog product &mdash; enter the agreed price here. Leave 0 if you only pick products below.</div>
         </div>
     </div>
 </div>
 
 <div class="card">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
         <div class="card-title" style="margin:0;padding:0;border:none;">Products</div>
         <button type="button" class="addrow" onclick="addRow()">+ Add Product</button>
     </div>
+    <div class="secnote">Optional &mdash; leave empty for a fully custom order (use the Custom Order Amount above).</div>
     <table>
-        <thead><tr><th style="width:45%">Product</th><th>Qty</th><th>Price (&#8369;)</th><th></th></tr></thead>
+        <thead><tr><th style="width:42%">Product</th><th>Qty</th><th>Price (&#8369;)</th><th>Total (&#8369;)</th><th></th></tr></thead>
         <tbody id="rows"></tbody>
     </table>
+</div>
+
+<div class="card">
+    <div class="card-title">Payment Summary</div>
+    <div class="sumrow grand"><span class="lbl">Overall Total</span><span class="val">&#8369;<span id="grandTotal">0.00</span></span></div>
+    <hr class="divline">
+    <div>
+        <label>Downpayment (&#8369;)</label>
+        <input type="number" step="0.01" min="0" name="deposit_amount" id="deposit" value="{{ old('deposit_amount', 0) }}" oninput="recalc()">
+        <div class="hint">Amount verbally agreed between the client and Trove.</div>
+    </div>
+    <div class="sumrow" style="margin-top:12px;"><span class="lbl">Balance</span><span class="val">&#8369;<span id="balanceDue">0.00</span></span></div>
 </div>
 
 <div style="display:flex;gap:12px;justify-content:flex-end;">
@@ -91,26 +103,41 @@ td{padding:8px 12px;border-bottom:1px solid #f3f4f6;}
 <script>
 const products = {!! $productData->toJson() !!};
 let i = 0;
-function pickType(which){
-    document.getElementById('opt-ind').classList.toggle('sel', which==='ind');
-    document.getElementById('opt-inst').classList.toggle('sel', which==='inst');
-}
 function opts(){ return products.map(function(p){ return '<option value="'+p.id+'" data-price="'+p.price+'">'+p.name+'</option>'; }).join(''); }
 function addRow(){
     const n = i++;
     const tr = document.createElement('tr');
     tr.id = 'r'+n;
     tr.innerHTML =
-        '<td><select name="items['+n+'][product_id]" onchange="fillPrice(this,'+n+')" required><option value="">- Select -</option>'+opts()+'</select></td>' +
-        '<td><input type="number" name="items['+n+'][quantity]" min="1" value="1" required></td>' +
-        '<td><input type="number" step="0.01" min="0" id="price'+n+'" name="items['+n+'][price]" required></td>' +
-        '<td><button type="button" class="rm" onclick="document.getElementById(\'r'+n+'\').remove()">&times;</button></td>';
+        '<td><select name="items['+n+'][product_id]" onchange="fillPrice(this,'+n+')"><option value="">- Select -</option>'+opts()+'</select></td>' +
+        '<td><input type="number" name="items['+n+'][quantity]" min="1" value="1" oninput="recalc()"></td>' +
+        '<td><input type="number" step="0.01" min="0" id="price'+n+'" name="items['+n+'][price]" oninput="recalc()"></td>' +
+        '<td class="totcell" id="tot'+n+'">0.00</td>' +
+        '<td><button type="button" class="rm" onclick="document.getElementById(\'r'+n+'\').remove(); recalc()">&times;</button></td>';
     document.getElementById('rows').appendChild(tr);
 }
 function fillPrice(sel,n){
     const p = sel.options[sel.selectedIndex].dataset.price;
     if(p) document.getElementById('price'+n).value = p;
+    recalc();
+}
+function recalc(){
+    let grand = 0;
+    document.querySelectorAll('#rows tr').forEach(function(tr){
+        const id = tr.id.substring(1);
+        const q  = parseFloat(tr.querySelector('input[name$="[quantity]"]').value) || 0;
+        const pr = parseFloat(document.getElementById('price'+id).value) || 0;
+        const line = q * pr;
+        document.getElementById('tot'+id).textContent = line.toFixed(2);
+        grand += line;
+    });
+    const custom = parseFloat(document.getElementById('customAmount').value) || 0;
+    grand += custom;
+    document.getElementById('grandTotal').textContent = grand.toFixed(2);
+    const dep = parseFloat(document.getElementById('deposit').value) || 0;
+    document.getElementById('balanceDue').textContent = (grand - dep).toFixed(2);
 }
 addRow();
+recalc();
 </script>
 </x-app-layout>

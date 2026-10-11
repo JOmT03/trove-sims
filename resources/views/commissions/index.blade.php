@@ -32,9 +32,7 @@
 
     <div class="top">
         <div class="tabs">
-            <a href="{{ route('commissions.index', ['type'=>'all']) }}" class="tab {{ $type==='all'?'active':'' }}">All <span class="n">{{ $counts['all'] }}</span></a>
-            <a href="{{ route('commissions.index', ['type'=>'individual']) }}" class="tab {{ $type==='individual'?'active':'' }}">Individual <span class="n">{{ $counts['individual'] }}</span></a>
-            <a href="{{ route('commissions.index', ['type'=>'institutional']) }}" class="tab {{ $type==='institutional'?'active':'' }}">Institutional <span class="n">{{ $counts['institutional'] }}</span></a>
+            <a href="{{ route('commissions.index', ['type'=>'all']) }}" class="tab active">All <span class="n">{{ $counts['all'] }}</span></a>
         </div>
         @can('admin')<a href="{{ route('commissions.create') }}" class="btn btn-gold">+ New Commission</a>@endcan
     </div>
@@ -45,12 +43,11 @@
         <a href="{{ route('commissions.show', $c) }}" class="cc">
             <div class="cc-top">
                 <div class="cc-name">{{ $c->customer_name }}</div>
-                <span class="cc-type {{ $c->client_type==='institutional'?'t-inst':'t-ind' }}">{{ ucfirst($c->client_type) }}</span>
             </div>
             <div class="cc-sub">{{ $c->order_type ?: 'Custom cake' }}@if($c->needed_by_date) &middot; due {{ $c->needed_by_date->format('M d') }}@endif</div>
             <div class="cc-row">
                 <span class="stage s-{{ $c->status }}">{{ $c->status }}</span>
-                <span class="bal {{ $c->balance() > 0 ? 'unpaid':'paid' }}">{{ $c->balance() > 0 ? 'Balance &#8369;'.number_format($c->balance(),2) : 'Fully paid' }}</span>
+                <span class="bal {{ $c->balance() > 0 ? 'unpaid':'paid' }}">{!! $c->balance() > 0 ? 'Balance &#8369;'.number_format($c->balance(),2) : 'Fully paid' !!}</span>
             </div>
         </a>
         @endforeach
