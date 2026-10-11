@@ -24,3 +24,9 @@ Homestead.yaml
 Thumbs.db
 
 newni/
+
+# Local backups & one-off setup scripts
+*.bak
+*.bak2
+*.bakp
+setup-*.ps1
