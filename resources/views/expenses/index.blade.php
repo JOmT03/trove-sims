@@ -41,21 +41,6 @@
                 <input type="number" step="0.01" name="amount" placeholder="0.00" required style="width: 100%; padding: 8px 12px; border: 1px solid var(--border); border-radius: 6px;">
             </div>
 
-            <div>
-                <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 6px;">Link Inventory (Optional)</label>
-                <select name="inventory_id" style="width: 100%; padding: 8px 12px; border: 1px solid var(--border); border-radius: 6px;">
-                    <option value="">-- None --</option>
-                    @foreach($inventoryItems as $item)
-                        <option value="{{ $item->id }}">{{ $item->item_name ?? $item->name }}</option>
-                    @endforeach
-                </select>
-            </div>
-
-            <div>
-                <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 6px;">Restock Qty (Optional)</label>
-                <input type="number" name="quantity" placeholder="0" min="1" style="width: 100%; padding: 8px 12px; border: 1px solid var(--border); border-radius: 6px;">
-            </div>
-
             <div style="grid-column: 1 / -1; margin-top: 8px;">
                 <button type="submit" style="background: var(--gold); color: var(--navy); border: none; font-weight: 700; padding: 10px 20px; border-radius: 6px; cursor: pointer;">
                     + Record Expense
@@ -75,7 +60,6 @@
                     <th style="padding: 10px;">Category</th>
                     <th style="padding: 10px;">Description</th>
                     <th style="padding: 10px;">Amount</th>
-                    <th style="padding: 10px;">Linked Item</th>
                     <th style="padding: 10px;">Action</th>
                 </tr>
             </thead>
@@ -86,7 +70,6 @@
                         <td style="padding: 10px;"><span style="background: #eee; padding: 2px 8px; border-radius: 4px; font-size: 12px;">{{ ucfirst($expense->category) }}</span></td>
                         <td style="padding: 10px;">{{ $expense->description }}</td>
                         <td style="padding: 10px; font-weight: 700;">₱{{ number_format($expense->amount, 2) }}</td>
-                        <td style="padding: 10px;">{{ $expense->inventoryItem->item_name ?? '—' }}</td>
                         <td style="padding: 10px;">
                             <form action="{{ route('expenses.destroy', $expense->id) }}" method="POST" onsubmit="return confirm('Delete this expense entry?')">
                                 @csrf
@@ -97,7 +80,7 @@
                     </tr>
                 @empty
                     <tr>
-                        <td colspan="6" style="padding: 20px; text-align: center; color: var(--muted);">No expenses recorded yet.</td>
+                        <td colspan="5" style="padding: 20px; text-align: center; color: var(--muted);">No expenses recorded yet.</td>
                     </tr>
                 @endforelse
             </tbody>

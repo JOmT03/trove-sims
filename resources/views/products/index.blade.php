@@ -10,7 +10,7 @@
 .p-search input{width:100%;padding:11px 14px 11px 40px;border:1px solid var(--border);border-radius:999px;font-size:14px;background:var(--white);color:var(--text);font-family:var(--f-body);}
 .p-search input:focus{outline:none;border-color:var(--gold);box-shadow:0 0 0 3px rgba(217,120,44,.14);}
 .filter-wrap{position:relative;}
-.filter-btn{display:inline-flex;align-items:center;gap:7px;background:var(--gold);color:#fff;border:none;border-radius:999px;padding:11px 18px;font-size:13.5px;font-weight:700;cursor:pointer;font-family:var(--f-body);}
+.filter-btn{display:inline-flex;align-items:center;gap:0;background:var(--gold);color:#fff;border:none;border-radius:999px;padding:11px 18px;font-size:13.5px;font-weight:700;cursor:pointer;font-family:var(--f-body);}
 .filter-btn svg{width:15px;height:15px;stroke:#fff;}
 .filter-menu{position:absolute;top:48px;right:0;background:var(--white);border:1px solid var(--border);border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,.16);overflow:hidden;z-index:6;min-width:160px;}
 .filter-menu button{display:block;width:100%;text-align:left;padding:10px 16px;font-size:13px;font-weight:600;color:var(--text);background:none;border:none;cursor:pointer;font-family:var(--f-body);}
@@ -70,9 +70,8 @@
             <input type="text" id="search" placeholder="Search products..." oninput="applyFilters()">
         </div>
         <div class="filter-wrap">
-            <button class="filter-btn" onclick="toggleFilter(event)">
+            <button class="filter-btn" onclick="toggleFilter(event)" title="Filter" aria-label="Filter">
                 <svg fill="none" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 4h18M6 12h12M10 20h4"/></svg>
-                Filter
             </button>
             <div class="filter-menu" id="filterMenu" hidden>
                 <button data-status="all" class="active" onclick="setStatus(this)">All stock</button>
