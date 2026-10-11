@@ -30,3 +30,7 @@ newni/
 *.bak2
 *.bakp
 setup-*.ps1
+
+*.bak*
+*.ps1
+commission_dump.txt
