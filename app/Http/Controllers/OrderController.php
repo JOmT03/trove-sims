@@ -96,7 +96,16 @@ class OrderController extends Controller
     public function updateStatus(Request $request, Order $order)
 {
     $request->validate(['status' => 'required|in:Pending,In Production,Ready,Completed']);
-    $order->update(['status' => $request->status]);
+    if ($order->completed_at && \App\Models\PeriodClosure::isClosed($order->completed_at)) {
+        return back()->with('error', 'This order was completed in a closed month and can no longer be changed.');
+    }
+    $order->update([
+        'status'       => $request->status,
+        'completed_at' => $request->status === 'Completed' ? ($order->completed_at ?? now()) : null,
+    ]);
+    if ($request->status === 'Completed') {
+        \App\Models\FinancialAuditLog::record('order.completed', $order, ['total' => (string) $order->total_amount]);
+    }
     return back()->with('success', 'Order status updated.');
 }
 }

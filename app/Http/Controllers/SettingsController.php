@@ -106,6 +106,7 @@ class SettingsController extends Controller
             }
 
             DB::unprepared($sql);
+            try { \App\Models\FinancialAuditLog::record('system.backup_restored', null, ['file' => $file->getClientOriginalName()]); } catch (\Throwable $e) {}
             return back()->with('success', 'Backup restored successfully. You may need to sign in again.');
         } catch (\Exception $e) {
             \Log::error('Restore failed: ' . $e->getMessage());

@@ -126,7 +126,16 @@ class CommissionController extends Controller
         $validated = $request->validate([
             'status' => 'required|in:' . implode(',', Commission::STAGES),
         ]);
-        $commission->update(['status' => $validated['status']]);
+        if ($commission->completed_at && \App\Models\PeriodClosure::isClosed($commission->completed_at)) {
+            return back()->with('error', 'This commission was completed in a closed month and can no longer be changed.');
+        }
+        $commission->update([
+            'status'       => $validated['status'],
+            'completed_at' => $validated['status'] === 'Completed' ? ($commission->completed_at ?? now()) : null,
+        ]);
+        if ($validated['status'] === 'Completed') {
+            \App\Models\FinancialAuditLog::record('order.completed', $commission, ['total' => (string) $commission->total_amount]);
+        }
 
         return back()->with('success', 'Status updated to ' . $validated['status'] . '.');
     }

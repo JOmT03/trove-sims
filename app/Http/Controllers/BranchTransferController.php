@@ -99,6 +99,10 @@ class BranchTransferController extends Controller
             'returns.*' => 'nullable|integer|min:0',
         ]);
 
+        if (\App\Models\PeriodClosure::isClosed($batch->batch_date)) {
+            return back()->with('error', 'This batch belongs to a closed month; its returns can no longer be changed.');
+        }
+
         try {
             DB::beginTransaction();
 

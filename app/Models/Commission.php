@@ -10,11 +10,12 @@ class Commission extends Model
 
     protected $fillable = [
         'user_id', 'site_id', 'customer_name', 'client_type', 'order_type',
-        'design_description', 'needed_by_date', 'total_amount', 'deposit_amount', 'status',
+        'design_description', 'needed_by_date', 'total_amount', 'deposit_amount', 'status', 'completed_at',
     ];
 
     protected $casts = [
         'needed_by_date' => 'date',
+        'completed_at'   => 'datetime',
     ];
 
     public const STAGES = ['Inquiry', 'Confirmed', 'Baking', 'Ready', 'Completed'];

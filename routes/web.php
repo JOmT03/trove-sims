@@ -100,10 +100,17 @@ Route::middleware(['auth', 'admin', \App\Http\Middleware\EnsureActive::class])->
     Route::patch('/users/{user}/toggle', [\App\Http\Controllers\UserController::class, 'toggleStatus'])->name('users.toggle');
 });
 
-// ===== Expenses & Financial Statement (Trove) =====
-Route::middleware(['auth'])->group(function () {
-    Route::resource('expenses', \App\Http\Controllers\ExpenseController::class);
+// ===== Expenses & Financial Statement (Owner & Manager only) =====
+// No edit/delete routes exist for expenses on purpose: entries are voided, never removed.
+Route::middleware(['auth', 'admin', \App\Http\Middleware\EnsureActive::class])->group(function () {
+    Route::get('/expenses', [\App\Http\Controllers\ExpenseController::class, 'index'])->name('expenses.index');
+    Route::post('/expenses', [\App\Http\Controllers\ExpenseController::class, 'store'])->name('expenses.store');
+    Route::post('/expenses/{expense}/void', [\App\Http\Controllers\ExpenseController::class, 'void'])->name('expenses.void');
+    Route::get('/expenses/{expense}/receipt', [\App\Http\Controllers\ExpenseController::class, 'receipt'])->name('expenses.receipt');
+
     Route::get('/financial-statement', [\App\Http\Controllers\FinancialStatementController::class, 'index'])->name('financial-statement.index');
+    Route::post('/financial-statement/close', [\App\Http\Controllers\FinancialStatementController::class, 'close'])->name('financial-statement.close');
+    Route::get('/financial-audit-log', [\App\Http\Controllers\FinancialStatementController::class, 'auditLog'])->name('financial-audit-log.index');
 });
 // ---- Inventory Archive (Owner & Manager) ----
 Route::middleware(['auth', 'admin', \App\Http\Middleware\EnsureActive::class])->group(function () {
