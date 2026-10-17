@@ -179,3 +179,49 @@ test('completing an order stamps completed_at and a closed month freezes it', fu
     $this->actingAs($owner)->patch("/orders/{$id}/status", ['status' => 'Pending'])->assertSessionHas('error');
     expect(DB::table('orders')->where('id', $id)->value('status'))->toBe('Completed');
 });
+
+test('restock is ingredients-only, and writes to the inventory history (also on void)', function () {
+    $m = mkUser('Manager');
+    $invId = DB::table('inventory')->insertGetId([
+        'item_name' => 'White sugar', 'category' => 'Dry', 'unit' => 'kg', 'quantity_on_hand' => 10,
+        'created_at' => now(), 'updated_at' => now(),
+    ]);
+
+    // Non-ingredient category: stock fields are ignored, no error, no stock change, no log
+    $this->actingAs($m)->post('/expenses', [
+        'expense_date' => now()->toDateString(), 'category' => 'rent', 'description' => 'Rent', 'amount' => 100,
+        'inventory_id' => $invId, 'quantity' => 5,
+    ])->assertSessionHasNoErrors();
+    expect((float) DB::table('inventory')->value('quantity_on_hand'))->toBe(10.0);
+    expect(DB::table('inventory_logs')->count())->toBe(0);
+    expect(Expense::first()->inventory_id)->toBeNull();
+
+    // Ingredients: stock goes up and a 'received' log row is written
+    $this->actingAs($m)->post('/expenses', [
+        'expense_date' => now()->toDateString(), 'category' => 'ingredients', 'description' => 'Sugar', 'amount' => 200,
+        'inventory_id' => $invId, 'quantity' => 4,
+    ])->assertSessionHasNoErrors();
+    expect((float) DB::table('inventory')->value('quantity_on_hand'))->toBe(14.0);
+    $log = DB::table('inventory_logs')->first();
+    expect($log->type)->toBe('received')->and((float) $log->quantity)->toBe(4.0);
+
+    // Voiding reverses it and logs an adjustment
+    $e = Expense::where('category', 'ingredients')->first();
+    $this->actingAs($m)->post("/expenses/{$e->id}/void", ['void_reason' => 'Entered by mistake']);
+    expect((float) DB::table('inventory')->value('quantity_on_hand'))->toBe(10.0);
+    expect(DB::table('inventory_logs')->where('type', 'adjustment')->count())->toBe(1);
+});
+
+test('statement shows losses with a minus sign in red and profit in green', function () {
+    $m = mkUser('Owner');
+    mkExpense(['category' => 'ingredients', 'amount' => 200, 'description' => 'White sugar']);
+
+    $this->actingAs($m)->get('/financial-statement')->assertOk()
+        ->assertSee('-₱200.00', false)
+        ->assertSee('color:var(--red)', false);
+
+    // add revenue bigger than the cost -> positive, green, no minus
+    DB::table('orders')->insert(['status' => 'Completed', 'total_amount' => 1000, 'completed_at' => now(), 'created_at' => now(), 'updated_at' => now()]);
+    $html = $this->actingAs($m)->get('/financial-statement')->getContent();
+    expect($html)->toContain('color:var(--green);font-weight:700;">₱800.00');
+});

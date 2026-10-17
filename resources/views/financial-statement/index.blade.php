@@ -4,7 +4,12 @@
 
 @php
     $peso = fn ($n) => '₱' . number_format(abs($n), 2);
-    $neg  = fn ($n) => $n < 0 ? '(' . '₱' . number_format(abs($n), 2) . ')' : '₱' . number_format($n, 2);
+    // Signed money: -₱200.00 in red, ₱200.00 in green, ₱0.00 neutral
+    $col  = fn ($n) => round($n, 2) > 0 ? 'var(--green)' : (round($n, 2) < 0 ? 'var(--red)' : 'inherit');
+    $v    = fn ($n) => new \Illuminate\Support\HtmlString(
+        '<span style="color:' . $col($n) . ';font-weight:700;">' . (round($n, 2) < 0 ? '-' : '') . '₱' . number_format(abs(round($n, 2)), 2) . '</span>');
+    $pct  = fn ($n) => new \Illuminate\Support\HtmlString(
+        '<span style="color:' . $col($n) . ';">' . ($n > 0 ? '+' : '') . $n . '%</span>');
     $row  = 'display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);font-size:14px;';
     $lbl  = 'display:block;font-size:12px;font-weight:600;margin-bottom:6px;';
 @endphp
@@ -74,31 +79,31 @@
 
     <div style="max-width:620px;margin:0 auto;">
         <div style="font-weight:800;text-transform:uppercase;font-size:12px;color:var(--muted);margin-top:8px;">Revenue</div>
-        <div style="{{ $row }}"><span>Custom orders &amp; commissions (completed)</span><span>{{ $neg($s['orderRevenue']) }}</span></div>
-        <div style="{{ $row }}"><span>Branch sales (net of returns)</span><span>{{ $neg($s['branchRevenue']) }}</span></div>
-        <div style="{{ $row }}font-weight:800;border-bottom:2px solid var(--navy);"><span>Total Revenue</span><span>{{ $neg($s['revenue']) }}</span></div>
+        <div style="{{ $row }}"><span>Custom orders &amp; commissions (completed)</span><span>{!! $v($s['orderRevenue']) !!}</span></div>
+        <div style="{{ $row }}"><span>Branch sales (net of returns)</span><span>{!! $v($s['branchRevenue']) !!}</span></div>
+        <div style="{{ $row }}font-weight:800;border-bottom:2px solid var(--navy);"><span>Total Revenue</span><span>{!! $v($s['revenue']) !!}</span></div>
 
         <div style="font-weight:800;text-transform:uppercase;font-size:12px;color:var(--muted);margin-top:18px;">Less: Cost of Goods Sold</div>
         @forelse($s['cogsLines'] as $cat => $amt)
-            <div style="{{ $row }}"><span style="padding-left:14px;">{{ ucfirst($cat) }}</span><span>({{ $peso($amt) }})</span></div>
+            <div style="{{ $row }}"><span style="padding-left:14px;">{{ ucfirst($cat) }}</span><span>{!! $v(-$amt) !!}</span></div>
         @empty
             <div style="{{ $row }}color:var(--muted);"><span style="padding-left:14px;">None recorded</span><span>—</span></div>
         @endforelse
-        <div style="{{ $row }}font-weight:700;"><span>Total COGS</span><span>({{ $peso($s['cogs']) }})</span></div>
+        <div style="{{ $row }}font-weight:700;"><span>Total COGS</span><span>{!! $v(-$s['cogs']) !!}</span></div>
 
-        <div style="{{ $row }}font-weight:800;border-bottom:2px solid var(--navy);margin-top:8px;"><span>Gross Profit @if($s['grossMargin'] !== null)<small style="font-weight:400;color:var(--muted);">({{ $s['grossMargin'] }}%)</small>@endif</span><span>{{ $neg($s['grossProfit']) }}</span></div>
+        <div style="{{ $row }}font-weight:800;border-bottom:2px solid var(--navy);margin-top:8px;"><span>Gross Profit @if($s['grossMargin'] !== null)<small style="font-weight:400;">({!! $pct($s['grossMargin']) !!} margin)</small>@endif</span><span>{!! $v($s['grossProfit']) !!}</span></div>
 
         <div style="font-weight:800;text-transform:uppercase;font-size:12px;color:var(--muted);margin-top:18px;">Less: Operating Expenses</div>
         @forelse($s['opexLines'] as $cat => $amt)
-            <div style="{{ $row }}"><span style="padding-left:14px;">{{ ucfirst($cat) }}</span><span>({{ $peso($amt) }})</span></div>
+            <div style="{{ $row }}"><span style="padding-left:14px;">{{ ucfirst($cat) }}</span><span>{!! $v(-$amt) !!}</span></div>
         @empty
             <div style="{{ $row }}color:var(--muted);"><span style="padding-left:14px;">None recorded</span><span>—</span></div>
         @endforelse
-        <div style="{{ $row }}font-weight:700;"><span>Total Operating Expenses</span><span>({{ $peso($s['opex']) }})</span></div>
+        <div style="{{ $row }}font-weight:700;"><span>Total Operating Expenses</span><span>{!! $v(-$s['opex']) !!}</span></div>
 
-        <div style="display:flex;justify-content:space-between;padding:12px 0;margin-top:10px;font-size:18px;font-weight:800;border-top:2px solid var(--navy);border-bottom:4px double var(--navy);color:{{ $s['netIncome'] >= 0 ? 'var(--green)' : 'var(--red)' }};">
-            <span>Net Income @if($s['netMargin'] !== null)<small style="font-weight:400;color:var(--muted);">({{ $s['netMargin'] }}% margin)</small>@endif</span>
-            <span>{{ $neg($s['netIncome']) }}</span>
+        <div style="display:flex;justify-content:space-between;padding:12px 0;margin-top:10px;font-size:18px;font-weight:800;border-top:2px solid var(--navy);border-bottom:4px double var(--navy);">
+            <span>Net Income @if($s['netMargin'] !== null)<small style="font-weight:400;">({!! $pct($s['netMargin']) !!} margin)</small>@endif</span>
+            <span>{!! $v($s['netIncome']) !!}</span>
         </div>
 
         @if($s['voidedCount'] > 0)
@@ -152,8 +157,8 @@
         @foreach($closures as $c)
             <tr style="border-bottom:1px solid var(--border);">
                 <td style="padding:8px;">{{ $c->period->format('F Y') }}</td>
-                <td style="padding:8px;text-align:right;">{{ $neg($c->revenue) }}</td>
-                <td style="padding:8px;text-align:right;color:{{ $c->net_income >= 0 ? 'var(--green)' : 'var(--red)' }};">{{ $neg($c->net_income) }}</td>
+                <td style="padding:8px;text-align:right;">{!! $v($c->revenue) !!}</td>
+                <td style="padding:8px;text-align:right;>{!! $v($c->net_income) !!}</td>
                 <td style="padding:8px;">{{ $c->closed_by_name }}</td>
                 <td style="padding:8px;"><a style="color:var(--navy);" href="{{ route('financial-statement.index', ['from'=>$c->period->toDateString(),'to'=>$c->period->copy()->endOfMonth()->toDateString()]) }}">View</a></td>
             </tr>

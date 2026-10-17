@@ -24,7 +24,7 @@
             </div>
             <div>
                 <label style="{{ $lbl }}">Category</label>
-                <select name="category" required style="{{ $inp }}">
+                <select name="category" id="exp-cat" required style="{{ $inp }}">
                     <optgroup label="Cost of Goods Sold (COGS)">
                         <option value="ingredients" @selected(old('category')==='ingredients')>Ingredients (Raw Materials / Grocery)</option>
                         <option value="packaging" @selected(old('category')==='packaging')>Packaging &amp; Supplies</option>
@@ -48,8 +48,8 @@
                 <input type="number" step="0.01" min="0.01" name="amount" value="{{ old('amount') }}" placeholder="0.00" required style="{{ $inp }}">
             </div>
             <div>
-                <label style="{{ $lbl }}">Restock inventory item <span style="font-weight:400;color:var(--muted)">(optional)</span></label>
-                <select name="inventory_id" style="{{ $inp }}">
+                <label style="{{ $lbl }}">Restock inventory item <span style="font-weight:400;color:var(--muted)">(optional, Ingredients only)</span></label>
+                <select name="inventory_id" id="exp-inv" style="{{ $inp }}">
                     <option value="">&mdash; not a stock purchase &mdash;</option>
                     @foreach($inventoryItems as $inv)
                         <option value="{{ $inv->id }}" @selected(old('inventory_id')==$inv->id)>{{ $inv->item_name }} ({{ $inv->unit }})</option>
@@ -58,7 +58,7 @@
             </div>
             <div>
                 <label style="{{ $lbl }}">Quantity bought <span style="font-weight:400;color:var(--muted)">(if restocking)</span></label>
-                <input type="number" min="1" step="1" name="quantity" value="{{ old('quantity') }}" style="{{ $inp }}">
+                <input type="number" min="1" step="1" name="quantity" id="exp-qty" value="{{ old('quantity') }}" style="{{ $inp }}">
             </div>
             <div>
                 <label style="{{ $lbl }}">Receipt <span style="font-weight:400;color:var(--muted)">(JPG/PNG/PDF, max 4MB)</span></label>
@@ -137,4 +137,21 @@
         </table>
         </div>
     </div>
+<script>
+(function () {
+    var cat = document.getElementById('exp-cat'), inv = document.getElementById('exp-inv'), qty = document.getElementById('exp-qty');
+    if (!cat || !inv || !qty) return;
+    function sync() {
+        var on = cat.value === 'ingredients';
+        [inv, qty].forEach(function (el) {
+            el.disabled = !on;
+            el.style.opacity = on ? '1' : '.5';
+            el.style.cursor = on ? '' : 'not-allowed';
+            if (!on) el.value = '';
+        });
+    }
+    cat.addEventListener('change', sync);
+    sync();
+})();
+</script>
 </x-app-layout>

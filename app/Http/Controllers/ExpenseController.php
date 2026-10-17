@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Expense;
 use App\Models\FinancialAuditLog;
 use App\Models\Inventory;
+use App\Models\InventoryLog;
 use App\Models\PeriodClosure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -51,6 +52,11 @@ class ExpenseController extends Controller
 
     public function store(Request $request)
     {
+        // Restocking only applies to Ingredients; ignore the stock fields for any other category.
+        if ($request->input('category') !== 'ingredients') {
+            $request->merge(['inventory_id' => null, 'quantity' => null]);
+        }
+
         $v = $request->validate([
             'expense_date' => 'required|date|before_or_equal:today',
             'category'     => 'required|string|in:' . self::CATEGORIES,
@@ -75,9 +81,17 @@ class ExpenseController extends Controller
 
             $expense = Expense::create($data);
 
-            // Linked purchase: stock the item in
+            // Linked ingredient purchase: stock the item in and write it to the inventory history
             if (!empty($data['inventory_id']) && !empty($data['quantity'])) {
                 Inventory::where('id', $data['inventory_id'])->increment('quantity_on_hand', $data['quantity']);
+                InventoryLog::create([
+                    'inventory_id' => $data['inventory_id'],
+                    'type'         => 'received',
+                    'quantity'     => $data['quantity'],
+                    'reference'    => 'EXPENSE-' . $expense->id,
+                    'notes'        => 'Purchased via Expenses: ' . $expense->description,
+                    'user_id'      => auth()->id(),
+                ]);
             }
 
             FinancialAuditLog::record('expense.recorded', $expense, [
@@ -117,6 +131,14 @@ class ExpenseController extends Controller
                     $undo = min((int) $locked->quantity, (int) $inv->quantity_on_hand);
                     $inv->decrement('quantity_on_hand', $undo);
                     $note = "stock reversed by {$undo} of {$locked->quantity}";
+                    InventoryLog::create([
+                        'inventory_id' => $inv->id,
+                        'type'         => 'adjustment',
+                        'quantity'     => $undo,
+                        'reference'    => 'EXPENSE-VOID-' . $locked->id,
+                        'notes'        => 'Expense voided, stock removed: ' . $locked->description,
+                        'user_id'      => auth()->id(),
+                    ]);
                 }
             }
 
