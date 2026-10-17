@@ -88,8 +88,7 @@ class ExpenseController extends Controller
                     'inventory_id' => $data['inventory_id'],
                     'type'         => 'received',
                     'quantity'     => $data['quantity'],
-                    'reference'    => 'EXPENSE-' . $expense->id,
-                    'notes'        => 'Purchased via Expenses: ' . $expense->description,
+                    'notes'        => '[EXPENSE-' . $expense->id . '] Purchased via Expenses: ' . $expense->description,
                     'user_id'      => auth()->id(),
                 ]);
             }
@@ -135,8 +134,7 @@ class ExpenseController extends Controller
                         'inventory_id' => $inv->id,
                         'type'         => 'adjustment',
                         'quantity'     => $undo,
-                        'reference'    => 'EXPENSE-VOID-' . $locked->id,
-                        'notes'        => 'Expense voided, stock removed: ' . $locked->description,
+                        'notes'        => '[EXPENSE-VOID-' . $locked->id . '] Expense voided, stock removed: ' . $locked->description,
                         'user_id'      => auth()->id(),
                     ]);
                 }

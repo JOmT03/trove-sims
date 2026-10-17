@@ -204,6 +204,7 @@ test('restock is ingredients-only, and writes to the inventory history (also on 
     expect((float) DB::table('inventory')->value('quantity_on_hand'))->toBe(14.0);
     $log = DB::table('inventory_logs')->first();
     expect($log->type)->toBe('received')->and((float) $log->quantity)->toBe(4.0);
+    expect($log->notes)->toContain('[EXPENSE-');
 
     // Voiding reverses it and logs an adjustment
     $e = Expense::where('category', 'ingredients')->first();
