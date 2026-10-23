@@ -89,37 +89,44 @@
     </div>
 
     <nav class="sidebar-nav">
+        @php $__staff = auth()->user()->role === 'Staff'; @endphp
         <div class="nav-label">Main</div>
 
-        <a href="{{ route('dashboard') }}" class="nav-item {{ request()->routeIs('dashboard') ? 'active' : '' }}">
+        @unless($__staff)<a href="{{ route('dashboard') }}" class="nav-item {{ request()->routeIs('dashboard') ? 'active' : '' }}">
             <svg class="nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>
             Dashboard
-        </a>
+        </a>@endunless
 
+                @if(Route::has('pos.index'))
+            <a href="{{ route('pos.index') }}" class="nav-item {{ request()->routeIs('pos.*') ? 'active' : '' }}">
+                <svg class="nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3h2l2 13h10l2-8H6M9 21a1 1 0 100-2 1 1 0 000 2zm8 0a1 1 0 100-2 1 1 0 000 2z"/></svg>
+                POS
+            </a>
+        @endif
         @if(Route::has('commissions.index'))
             <a href="{{ route('commissions.index') }}" class="nav-item {{ request()->routeIs('commissions.*') ? 'active' : '' }}">
                 <svg class="nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/></svg>
-                Commissions
+                Orders
             </a>
         @endif
 
-        <a href="{{ route('products.index') }}" class="nav-item {{ request()->routeIs('products.*') ? 'active' : '' }}">
+        @unless($__staff)<a href="{{ route('products.index') }}" class="nav-item {{ request()->routeIs('products.*') ? 'active' : '' }}">
             <svg class="nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>
             Products
-        </a>
+        </a>@endunless
 
-        <a href="{{ route('inventory.index') }}" class="nav-item {{ request()->routeIs('inventory.*') ? 'active' : '' }}">
+        @unless($__staff)<a href="{{ route('inventory.index') }}" class="nav-item {{ request()->routeIs('inventory.*') ? 'active' : '' }}">
             <svg class="nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"/></svg>
             Inventory
-        </a>
+        </a>@endunless
 
-        <div class="nav-label">Audit</div>
+        @unless($__staff)<div class="nav-label">Audit</div>@endunless
 
         @if(Route::has('branch-transfers.index'))
-            <a href="{{ route('branch-transfers.index') }}" class="nav-item {{ request()->routeIs('branch-transfers.*') ? 'active' : '' }}">
+            @unless($__staff)<a href="{{ route('branch-transfers.index') }}" class="nav-item {{ request()->routeIs('branch-transfers.*') ? 'active' : '' }}">
                 <svg class="nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7h11m0 0l-4-4m4 4l-4 4m9 6H9m0 0l4 4m-4-4l4-4"/></svg>
                 Branch Transfers
-            </a>
+            </a>@endunless
         @endif
 
         @if(in_array(auth()->user()->role, ['Owner','Manager']) && Route::has('expenses.index'))
@@ -144,17 +151,17 @@
         @endif
 
         @if(Route::has('reports.index'))
-            <a href="{{ route('reports.index') }}" class="nav-item {{ request()->routeIs('reports.*') ? 'active' : '' }}">
+            @unless($__staff)<a href="{{ route('reports.index') }}" class="nav-item {{ request()->routeIs('reports.*') ? 'active' : '' }}">
                 <svg class="nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-6h2v6m4-10v10M5 21h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v14a2 2 0 002 2z"/></svg>
                 Reports
-            </a>
+            </a>@endunless
         @endif
 
-        <div class="nav-label">Account</div>
-        <a href="{{ route('profile.edit') }}" class="nav-item {{ request()->routeIs('profile.*') ? 'active' : '' }}">
+        @unless($__staff)<div class="nav-label">Account</div>@endunless
+        @unless($__staff)<a href="{{ route('profile.edit') }}" class="nav-item {{ request()->routeIs('profile.*') ? 'active' : '' }}">
             <svg class="nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>
             Settings
-        </a>
+        </a>@endunless
 
         @can('admin')
         @if(Route::has('users.index'))

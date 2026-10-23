@@ -1,6 +1,6 @@
 <x-app-layout>
 <x-slot name="header">{{ $commission->customer_name }}</x-slot>
-<x-slot name="subheader">{{ ucfirst($commission->client_type) }} commission</x-slot>
+<x-slot name="subheader">{{ ucfirst($commission->client_type) }} order</x-slot>
 
 <style>
 .card{background:#fff;border-radius:14px;box-shadow:0 1px 6px rgba(0,0,0,.07);overflow:hidden;margin-bottom:20px;}
@@ -39,7 +39,7 @@ select{padding:9px 12px;border:1.5px solid #e2e8f0;border-radius:9px;font-size:1
 @if(session('success'))<div class="alert-ok">{{ session('success') }}</div>@endif
 
 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
-    <a href="{{ route('commissions.index') }}" class="btn btn-outline">&larr; All Commissions</a>
+    <div style="display:flex;gap:10px;align-items:center;"><a href="{{ route('commissions.index') }}" class="btn btn-outline">&larr; All Orders</a><a href="{{ route('commissions.receipt', $commission) }}" class="btn btn-gold" target="_blank">&#128424; Print receipt</a></div>
     <span class="type-badge {{ $commission->client_type==='institutional'?'t-inst':'t-ind' }}">{{ ucfirst($commission->client_type) }}</span>
 </div>
 
@@ -49,7 +49,12 @@ select{padding:9px 12px;border:1.5px solid #e2e8f0;border-radius:9px;font-size:1
         <div><div class="l">Needed By</div><div class="v">{{ $commission->needed_by_date ? $commission->needed_by_date->format('M d, Y') : 'Not set' }}</div></div>
         <div><div class="l">Status</div><div class="v">{{ $commission->status }}</div></div>
     </div>
-    @if($commission->design_description)
+    @if($commission->reference_photo_path)
+    <div style="margin-top:16px;padding-top:16px;border-top:1px solid #EDE0D0;">
+        <div style="font-size:10.5px;text-transform:uppercase;color:#8A7460;font-weight:700;">Reference photo</div>
+        <img src="{{ route('commissions.photo', $commission) }}" alt="reference" style="margin-top:8px;max-width:100%;max-height:300px;border-radius:10px;border:1px solid #EDE0D0;">
+    </div>
+    @endif    @if($commission->design_description)
     <div style="margin-top:16px;padding-top:16px;border-top:1px solid #EDE0D0;">
         <div class="l" style="font-size:10.5px;text-transform:uppercase;color:#8A7460;font-weight:700;">Design</div>
         <div style="margin-top:5px;font-size:13.5px;color:#374151;">{{ $commission->design_description }}</div>
@@ -80,7 +85,7 @@ select{padding:9px 12px;border:1.5px solid #e2e8f0;border-radius:9px;font-size:1
 </div></div>
 
 <div class="card">
-    <div class="card-pad" style="padding-bottom:0;"><div class="card-title">Products</div></div>
+    <div class="card-pad" style="padding-bottom:0;"><div class="card-title">Add-ons</div></div>
     <table>
         <thead><tr><th>Product</th><th>Qty</th><th>Price</th><th>Subtotal</th></tr></thead>
         <tbody>

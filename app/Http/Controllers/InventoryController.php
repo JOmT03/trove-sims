@@ -69,6 +69,7 @@ class InventoryController extends Controller
             'minimum_stock'    => 'required|numeric|min:0',
             'site_id'          => 'nullable|exists:sites,id',
             'notes'            => 'nullable|string',
+            'unit_cost'        => 'nullable|numeric|min:0',
         ]);
 
         $inventory = Inventory::create([
@@ -91,6 +92,16 @@ class InventoryController extends Controller
             'user_id'      => auth()->id(),
         ]);
 
+        // FIFO: opening lot for the starting quantity, at its unit cost
+        if ((float) $inventory->quantity_on_hand > 0) {
+            \App\Services\InventoryFifoService::receive(
+                $inventory->id,
+                $inventory->quantity_on_hand,
+                $validated['unit_cost'] ?? 0,
+                now()->toDateString(),
+                null
+            );
+        }
         return redirect()->route('inventory.index')->with('success', 'Inventory item added successfully.');
     }
 

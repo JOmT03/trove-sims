@@ -38,6 +38,10 @@ tr.tot td{font-weight:800;background:#FDF6EC;border-top:2px solid #EDE0D0;}
 </style>
 
 <div class="wrap">
+    <div style="display:inline-flex;background:#FDF6EC;border:1px solid #EDE0D0;border-radius:11px;padding:4px;gap:4px;margin-bottom:16px;" class="no-print">
+      <a href="{{ route('reports.index') }}" style="text-decoration:none;padding:8px 16px;border-radius:8px;font-size:13px;font-weight:700;color:#D9782C;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.08);">Weekly Batch</a>
+      <a href="{{ route('reports.eod') }}" style="text-decoration:none;padding:8px 16px;border-radius:8px;font-size:13px;font-weight:700;color:#8A7460;">End of Day</a>
+    </div>
     <form method="GET" action="{{ route('reports.index') }}" class="filter no-print">
         <div>
             <label>From</label>
@@ -65,10 +69,10 @@ tr.tot td{font-weight:800;background:#FDF6EC;border-top:2px solid #EDE0D0;}
         </div>
 
         <div class="sum">
-            <div><div class="l">Dispatched</div><div class="n disp">&#8369;{{ number_format($dispatched,2) }}</div></div>
-            <div><div class="l">Net Sold</div><div class="n net">&#8369;{{ number_format($totals['revenue'],2) }}</div></div>
-            <div><div class="l">Returned (loss)</div><div class="n loss">&#8369;{{ number_format($loss,2) }}</div></div>
-            <div><div class="l">Units Sold</div><div class="n">{{ $totals['net'] }} pcs</div></div>
+            <div class="rkpi" onclick="repDetail('dispatched')"><div class="l">Dispatched</div><div class="n disp">&#8369;{{ number_format($dispatched,2) }}</div></div>
+            <div class="rkpi" onclick="repDetail('net')"><div class="l">Net Sold</div><div class="n net">&#8369;{{ number_format($totals['revenue'],2) }}</div></div>
+            <div class="rkpi" onclick="repDetail('loss')"><div class="l">Returned (loss)</div><div class="n loss">&#8369;{{ number_format($loss,2) }}</div></div>
+            <div class="rkpi" onclick="repDetail('units')"><div class="l">Units Sold</div><div class="n">{{ $totals['net'] }} pcs</div></div>
         </div>
 
         @if(count($rows))
@@ -98,4 +102,58 @@ tr.tot td{font-weight:800;background:#FDF6EC;border-top:2px solid #EDE0D0;}
         @endif
     </div>
 </div>
+
+<!-- KPI detail modal -->
+<div class="rkpi-bg no-print" id="rkpiBg" onclick="if(event.target===this)rkpiClose()">
+  <div class="rkpi-modal">
+    <div class="rkpi-head"><h3 id="rkpiTitle">Detail</h3><button type="button" class="rkpi-x" onclick="rkpiClose()">&times;</button></div>
+    <div class="rkpi-body"><table id="rkpiTable"></table></div>
+  </div>
+</div>
+<style>
+.rkpi{cursor:pointer;transition:background .12s ease,box-shadow .12s ease;position:relative;}
+.rkpi:hover{background:#FBF2E6 !important;box-shadow:inset 0 0 0 2px #D9782C;}
+.rkpi::after{content:"\0025B8";position:absolute;top:8px;right:10px;color:#C9B8A3;font-size:12px;}
+.rkpi-bg{display:none;position:fixed;inset:0;background:rgba(46,28,16,.5);z-index:60;align-items:center;justify-content:center;padding:16px;}
+.rkpi-bg.show{display:flex;}
+.rkpi-modal{background:#fff;border-radius:14px;max-width:460px;width:100%;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.3);font-family:'Plus Jakarta Sans',system-ui,Arial,sans-serif;}
+.rkpi-head{display:flex;justify-content:space-between;align-items:center;padding:15px 18px;border-bottom:1px solid #EDE0D0;}
+.rkpi-head h3{margin:0;font-size:16px;color:#2E1C10;font-weight:800;}
+.rkpi-x{background:none;border:none;font-size:20px;cursor:pointer;color:#8A7460;line-height:1;}
+.rkpi-body{padding:6px 18px 18px;max-height:60vh;overflow:auto;}
+.rkpi-body table{width:100%;border-collapse:collapse;font-size:13px;}
+.rkpi-body th{text-align:right;font-size:10.5px;text-transform:uppercase;letter-spacing:.3px;color:#8A7460;padding:10px;background:#FDF6EC;}
+.rkpi-body th:first-child{text-align:left;}
+.rkpi-body td{padding:10px;border-top:1px solid #EDE0D0;text-align:right;font-variant-numeric:tabular-nums;}
+.rkpi-body td:first-child{text-align:left;font-weight:600;}
+</style>
+<script>
+const RKPI_ROWS = @json($rows);
+function rkpiPeso(n){ return "\u20B1" + Number(n||0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2}); }
+function rkpiClose(){ document.getElementById('rkpiBg').classList.remove('show'); }
+function repDetail(metric){
+  const defs = {
+    dispatched:{t:'Dispatched \u2014 what was sent', cols:['Flavor','Qty Sent','Value'],       get:function(r){return [r.sent, rkpiPeso(r.dispatched)];}},
+    net:       {t:'Net Sold',                       cols:['Flavor','Net Sold','Revenue'],     get:function(r){return [r.net, rkpiPeso(r.revenue)];}},
+    loss:      {t:'Returned (loss)',                cols:['Flavor','Qty Returned','Loss Value'],get:function(r){return [r.returned, rkpiPeso(r.loss)];}},
+    units:     {t:'Units Sold',                     cols:['Flavor','Net Sold (pcs)'],         get:function(r){return [r.net];}}
+  }[metric];
+  if(!defs){ return; }
+  document.getElementById('rkpiTitle').textContent = defs.t;
+  var html = '<thead><tr>';
+  defs.cols.forEach(function(ccc){ html += '<th>' + ccc + '</th>'; });
+  html += '</tr></thead><tbody>';
+  var keys = Object.keys(RKPI_ROWS);
+  if(keys.length === 0){ html += '<tr><td colspan="'+defs.cols.length+'" style="text-align:center;color:#8A7460;">No data.</td></tr>'; }
+  keys.forEach(function(name){
+    var r = RKPI_ROWS[name];
+    html += '<tr><td>' + name + '</td>';
+    defs.get(r).forEach(function(val){ html += '<td>' + val + '</td>'; });
+    html += '</tr>';
+  });
+  html += '</tbody>';
+  document.getElementById('rkpiTable').innerHTML = html;
+  document.getElementById('rkpiBg').classList.add('show');
+}
+</script>
 </x-app-layout>

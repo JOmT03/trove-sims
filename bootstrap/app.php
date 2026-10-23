@@ -16,6 +16,11 @@ return Application::configure(basePath: dirname(__DIR__))
             'admin'    => \App\Http\Middleware\AdminMiddleware::class,
             'supplier' => \App\Http\Middleware\SupplierMiddleware::class,
         ]);
+
+        // Staff accounts can only reach POS + Orders
+        $middleware->web(append: [
+            \App\Http\Middleware\StaffScope::class,
+        ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {
         //

@@ -140,3 +140,29 @@ Route::middleware(['auth', 'admin', \App\Http\Middleware\EnsureActive::class])->
 Route::middleware(['auth', 'admin', \App\Http\Middleware\EnsureActive::class])->group(function () {
     Route::get('/inventory-report/low-stock', [\App\Http\Controllers\InventoryController::class, 'lowStockReport'])->name('inventory.low-stock-report');
 });
+
+// ---- POS (counter sales) ----
+Route::middleware(['auth'])->group(function () {
+    Route::get('/pos', [\App\Http\Controllers\PosController::class, 'index'])->name('pos.index');
+    Route::post('/pos/sales', [\App\Http\Controllers\PosController::class, 'store'])->name('pos.sales.store');
+    Route::post('/pos/sales/{sale}/void', [\App\Http\Controllers\PosController::class, 'void'])->name('pos.sales.void');
+});
+// ---- Inventory FIFO valuation (cost data: Owner/Manager only) ----
+Route::middleware(['auth', 'admin'])->group(function () {
+    Route::get('/inventory-valuation', [\App\Http\Controllers\Inventory\ValuationController::class, 'index'])->name('inventory.valuation');
+});
+// ---- Reports: End of Day (Owner/Manager) ----
+Route::middleware(['auth', 'admin'])->group(function () {
+    Route::get('/reports/eod', [\App\Http\Controllers\Reports\EodController::class, 'index'])->name('reports.eod');
+    Route::post('/reports/eod/close', [\App\Http\Controllers\Reports\EodController::class, 'close'])->name('reports.eod.close');
+});
+// ---- Custom Order reference photo ----
+Route::middleware(['auth', 'admin'])->group(function () {
+    Route::get('/commissions/{commission}/photo', [\App\Http\Controllers\CommissionController::class, 'photo'])->name('commissions.photo');
+});
+// ---- Order receipt + shop/terms settings (Owner/Manager) ----
+Route::middleware(['auth', 'admin'])->group(function () {
+    Route::get('/commissions/{commission}/receipt', [\App\Http\Controllers\CommissionController::class, 'receipt'])->name('commissions.receipt');
+    Route::get('/settings/shop', [\App\Http\Controllers\ShopSettingsController::class, 'edit'])->name('settings.shop');
+    Route::post('/settings/shop', [\App\Http\Controllers\ShopSettingsController::class, 'update'])->name('settings.shop.update');
+});

@@ -107,7 +107,7 @@ tr.arch .item{color:var(--muted);}
         @if($view === 'active')
             @can('admin')
                 <a class="addbtn" href="{{ route('inventory.low-stock-report') }}" style="background:#fff;color:var(--gold);border:1px solid var(--border);margin-right:8px;">Restock List</a>
-                <a class="addbtn" href="{{ route('inventory.create') }}">+ Add Item</a>
+                <button type="button" class="addbtn" onclick="openAddInv()">+ Add Item</button>
             @endcan
         @endif
     </div>
@@ -216,5 +216,108 @@ function closeMenus(){ document.querySelectorAll('.menu').forEach(function(m){m.
 function toggleMenu(e,btn){ e.stopPropagation(); var m=btn.nextElementSibling; var w=m.hidden; closeMenus(); m.hidden=!w; }
 document.addEventListener('click', closeMenus);
 (function(){var sel=document.getElementById("catfilter");if(!sel)return;var seen={};document.querySelectorAll(".inv-card tbody tr[data-cat]").forEach(function(r){var k=r.getAttribute("data-cat");if(!k||seen[k])return;seen[k]=1;var o=document.createElement("option");o.value=k;o.textContent=k.replace(/\b\w/g,function(m){return m.toUpperCase();});sel.appendChild(o);});})();
+</script>
+
+<!-- Add Inventory Item modal -->
+@php $aimSites = \App\Models\Site::orderBy('site_name')->get(); $aimUserSite = auth()->user()->site_id; @endphp
+<div class="aim-bg" id="addInvBg">
+  <div class="aim-modal">
+    <div class="aim-head">
+      <div>
+        <h3>Add inventory item</h3>
+        <p class="aim-sub">A compact modal &mdash; no full-page dead space.</p>
+      </div>
+      <button type="button" class="aim-x" onclick="closeAddInv()" aria-label="Close">&times;</button>
+    </div>
+    <form method="POST" action="{{ route('inventory.store') }}">
+      @csrf
+      <div class="aim-body">
+        <div class="aim-fg">
+          <label>Item name <span class="aim-req">*</span></label>
+          <input type="text" name="item_name" placeholder="e.g. All-Purpose Flour" required autofocus>
+        </div>
+        <div class="aim-fg2">
+          <div class="aim-fg">
+            <label>Category <span class="aim-req">*</span></label>
+            <select name="category" required>
+              <option value="">&mdash; Select &mdash;</option>
+              @foreach(['Baking Essentials','Dairy & Eggs','Flavoring & Fillings','Packaging','Coffee & Beverage','Other'] as $cat)
+                <option value="{{ $cat }}">{{ $cat }}</option>
+              @endforeach
+            </select>
+          </div>
+          <div class="aim-fg">
+            <label>Unit <span class="aim-req">*</span></label>
+            <select name="unit" required>
+              <option value="">&mdash; Select &mdash;</option>
+              @foreach(['g','kg','ml','liters','pcs','dozen','pack'] as $u)
+                <option value="{{ $u }}">{{ $u }}</option>
+              @endforeach
+            </select>
+          </div>
+        </div>
+        <div class="aim-fg2">
+          <div class="aim-fg">
+            <label>Starting qty <span class="aim-req">*</span></label>
+            <input type="number" name="quantity_on_hand" step="0.01" min="0" value="0" required>
+          </div>
+          <div class="aim-fg">
+            <label>Unit cost (&#8369;)</label>
+            <input type="number" name="unit_cost" step="0.01" min="0" value="0" placeholder="0.00">
+          </div>
+        </div>
+        <div class="aim-fg2">
+          <div class="aim-fg">
+            <label>Min stock (alert) <span class="aim-req">*</span></label>
+            <input type="number" name="minimum_stock" step="0.01" min="0" value="0" required>
+          </div>
+          <div class="aim-fg">
+            <label>Site</label>
+            <select name="site_id">
+              <option value="">&mdash; None &mdash;</option>
+              @foreach($aimSites as $s)
+                <option value="{{ $s->id }}" {{ $aimUserSite == $s->id ? 'selected' : '' }}>{{ $s->site_name }}</option>
+              @endforeach
+            </select>
+          </div>
+        </div>
+        <div class="aim-fg">
+          <label>Notes</label>
+          <textarea name="notes" rows="2"></textarea>
+        </div>
+      </div>
+      <div class="aim-foot">
+        <button type="button" class="aim-ghost" onclick="closeAddInv()">Cancel</button>
+        <button type="submit" class="aim-primary">Add item</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<style>
+.aim-bg{display:none;position:fixed;inset:0;background:rgba(46,28,16,.55);z-index:70;align-items:center;justify-content:center;padding:16px;}
+.aim-bg.show{display:flex;}
+.aim-modal{background:var(--white);border-radius:18px;max-width:500px;width:100%;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.35);}
+.aim-head{display:flex;align-items:flex-start;justify-content:space-between;padding:18px 20px;border-bottom:1px solid var(--border);}
+.aim-head h3{font-family:var(--f-display);font-size:18px;margin:0;}
+.aim-sub{font-size:12px;color:var(--muted);margin:3px 0 0;}
+.aim-x{background:none;border:none;color:var(--muted);font-size:22px;line-height:1;cursor:pointer;padding:0 2px;}
+.aim-x:hover{color:var(--text);}
+.aim-body{padding:18px 20px;}
+.aim-fg{margin-bottom:14px;}
+.aim-fg2{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+.aim-modal label{display:block;font-size:12.5px;font-weight:700;color:var(--text);margin-bottom:6px;}
+.aim-req{color:#C2410C;}
+.aim-modal input,.aim-modal select,.aim-modal textarea{width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:9px;font-size:14px;background:var(--white);color:var(--text);font-family:var(--f-body);box-sizing:border-box;}
+.aim-modal input:focus,.aim-modal select:focus,.aim-modal textarea:focus{outline:none;border-color:var(--gold);box-shadow:0 0 0 3px rgba(217,120,44,.14);}
+.aim-foot{padding:14px 20px;border-top:1px solid var(--border);display:flex;gap:10px;justify-content:flex-end;}
+.aim-ghost{background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:10px;padding:11px 18px;font-size:14px;font-weight:700;cursor:pointer;font-family:var(--f-body);}
+.aim-primary{background:var(--gold);color:#fff;border:none;border-radius:10px;padding:11px 22px;font-size:14px;font-weight:700;cursor:pointer;font-family:var(--f-body);}
+</style>
+
+<script>
+function openAddInv(){ document.getElementById('addInvBg').classList.add('show'); }
+function closeAddInv(){ document.getElementById('addInvBg').classList.remove('show'); }
+document.getElementById('addInvBg').addEventListener('click', function(e){ if(e.target === this) closeAddInv(); });
 </script>
 </x-app-layout>

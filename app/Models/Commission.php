@@ -10,7 +10,8 @@ class Commission extends Model
 
     protected $fillable = [
         'user_id', 'site_id', 'customer_name', 'client_type', 'order_type',
-        'design_description', 'needed_by_date', 'total_amount', 'deposit_amount', 'status', 'completed_at',
+        'design_description', 'reference_photo_path', 'needed_by_date',
+        'total_amount', 'deposit_amount', 'status', 'completed_at',
     ];
 
     protected $casts = [

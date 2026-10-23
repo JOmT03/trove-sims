@@ -1,5 +1,5 @@
 <x-app-layout>
-<x-slot name="header">Commissions</x-slot>
+<x-slot name="header">Orders</x-slot>
 <x-slot name="subheader">Custom &amp; institutional cake orders</x-slot>
 
 <style>
@@ -34,7 +34,7 @@
         <div class="tabs">
             <a href="{{ route('commissions.index', ['type'=>'all']) }}" class="tab active">All <span class="n">{{ $counts['all'] }}</span></a>
         </div>
-        @can('admin')<a href="{{ route('commissions.create') }}" class="btn btn-gold">+ New Commission</a>@endcan
+        <a href="{{ route('commissions.create') }}" class="btn btn-gold">+ New Order</a>
     </div>
 
     @if($commissions->count())
@@ -54,8 +54,8 @@
     </div>
     @else
     <div class="empty">
-        <p style="margin-bottom:16px;">No {{ $type!=='all' ? $type : '' }} commissions yet.</p>
-        @can('admin')<a href="{{ route('commissions.create') }}" class="btn btn-gold">+ Create First Commission</a>@endcan
+        <p style="margin-bottom:16px;">No {{ $type!=='all' ? $type : '' }} orders yet.</p>
+        <a href="{{ route('commissions.create') }}" class="btn btn-gold">+ Create First Order</a>
     </div>
     @endif
 </div>

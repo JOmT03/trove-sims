@@ -25,12 +25,14 @@ class ReportController extends Controller
             foreach ($b->items as $it) {
                 $name = $it->product->product_name ?? 'Unknown';
                 if (! isset($rows[$name])) {
-                    $rows[$name] = ['sent' => 0, 'returned' => 0, 'net' => 0, 'revenue' => 0];
+                    $rows[$name] = ['sent' => 0, 'returned' => 0, 'net' => 0, 'revenue' => 0, 'dispatched' => 0, 'loss' => 0];
                 }
                 $rows[$name]['sent']     += $it->qty_sent;
                 $rows[$name]['returned'] += $it->qty_returned;
                 $rows[$name]['net']      += $it->netSold();
                 $rows[$name]['revenue']  += $it->revenue();
+                $rows[$name]['dispatched'] += $it->qty_sent * $it->unit_price;
+                $rows[$name]['loss']       += $it->qty_returned * $it->unit_price;
             }
         }
         ksort($rows);

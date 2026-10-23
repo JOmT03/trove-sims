@@ -7,6 +7,7 @@ use App\Models\FinancialAuditLog;
 use App\Models\Inventory;
 use App\Models\InventoryLog;
 use App\Models\PeriodClosure;
+use App\Services\InventoryFifoService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -91,6 +92,15 @@ class ExpenseController extends Controller
                     'notes'        => '[EXPENSE-' . $expense->id . '] Purchased via Expenses: ' . $expense->description,
                     'user_id'      => auth()->id(),
                 ]);
+
+                // FIFO: record this purchase as a cost lot (oldest-first costing)
+                InventoryFifoService::receive(
+                    $data['inventory_id'],
+                    $data['quantity'],
+                    $data['quantity'] > 0 ? round($expense->amount / $data['quantity'], 2) : 0,
+                    $expense->expense_date,
+                    $expense->id
+                );
             }
 
             FinancialAuditLog::record('expense.recorded', $expense, [
@@ -137,6 +147,9 @@ class ExpenseController extends Controller
                         'notes'        => '[EXPENSE-VOID-' . $locked->id . '] Expense voided, stock removed: ' . $locked->description,
                         'user_id'      => auth()->id(),
                     ]);
+
+                    // FIFO: reverse this purchase's cost lot
+                    InventoryFifoService::reverseExpense($locked->id, $undo);
                 }
             }
 
