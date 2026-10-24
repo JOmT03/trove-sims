@@ -1,0 +1,1314 @@
+===== app/Http/Controllers/RecipeController.php =====
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\Product;
+use App\Models\Inventory;
+use App\Models\InventoryLog;
+use App\Models\RecipeVersion;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+
+class RecipeController extends Controller
+{
+    public function index(Product $product)
+    {
+        $this->ensureSeed($product);
+        $inventoryItems = Inventory::orderBy('item_name')->get();
+        $versions = RecipeVersion::where('product_id', $product->id)
+            ->orderBy('is_archived')->orderByDesc('is_active')->orderBy('name')->get();
+        $active = $versions->firstWhere('is_active', true);
+        $activeMax = $active ? $this->maxMake($active->items ?? []) : 0;
+        return view('products.recipes', compact('product', 'inventoryItems', 'versions', 'active', 'activeMax'));
+    }
+
+    private function ensureSeed(Product $product): void
+    {
+        if (RecipeVersion::where('product_id', $product->id)->exists()) return;
+        $items = [];
+        foreach ($product->materials as $m) {
+            $items[] = ['inventory_id' => $m->id, 'quantity_used' => (float) $m->pivot->quantity_used];
+        }
+        RecipeVersion::create([
+            'product_id'  => $product->id,
+            'name'        => 'Original',
+            'items'       => $items,
+            'is_active'   => true,
+            'is_archived' => false,
+        ]);
+    }
+
+    private function maxMake(array $items): int
+    {
+        if (empty($items)) return 0;
+        $m = null;
+        foreach ($items as $it) {
+            $inv = Inventory::find($it['inventory_id'] ?? 0);
+            $q   = (float) ($it['quantity_used'] ?? 0);
+            if (! $inv || $q <= 0) continue;
+            $can = (int) floor($inv->quantity_on_hand / $q);
+            $m = is_null($m) ? $can : min($m, $can);
+        }
+        return is_null($m) ? 0 : $m;
+    }
+
+    // Keep product_materials in sync with the active recipe so legacy code keeps working
+    private function syncActiveToPivot(Product $product, array $items): void
+    {
+        $sync = [];
+        foreach ($items as $it) {
+            if (empty($it['inventory_id'])) continue;
+            $sync[$it['inventory_id']] = ['quantity_used' => $it['quantity_used'] ?? 0];
+        }
+        $product->materials()->sync($sync);
+    }
+
+    private function parseItems(Request $request): array
+    {
+        $items = [];
+        foreach ((array) $request->input('items', []) as $row) {
+            $inv = $row['inventory_id'] ?? null;
+            $q   = $row['quantity_used'] ?? null;
+            if (! $inv || ! is_numeric($q) || (float) $q <= 0) continue;
+            $items[] = ['inventory_id' => (int) $inv, 'quantity_used' => (float) $q];
+        }
+        return $items;
+    }
+
+    private function guard(Product $product, RecipeVersion $version): void
+    {
+        abort_unless($version->product_id === $product->id, 404);
+    }
+
+    public function produce(Request $request, Product $product)
+    {
+        $data = $request->validate(['quantity' => 'required|integer|min:1']);
+        $qty  = (int) $data['quantity'];
+
+        $active = RecipeVersion::where('product_id', $product->id)
+            ->where('is_active', true)->where('is_archived', false)->first();
+        if (! $active || empty($active->items)) {
+            return back()->with('error', 'No active recipe to produce from.');
+        }
+        $items = $active->items;
+        $max   = $this->maxMake($items);
+        if ($qty > $max) {
+            return back()->with('error', "Not enough stock. You can make up to {$max}.");
+        }
+        try {
+            DB::beginTransaction();
+            foreach ($items as $it) {
+                $inv  = Inventory::findOrFail($it['inventory_id']);
+                $need = (float) $it['quantity_used'] * $qty;
+                $inv->update(['quantity_on_hand' => $inv->quantity_on_hand - $need]);
+                InventoryLog::create([
+                    'inventory_id' => $inv->id,
+                    'type'         => 'used',
+                    'quantity'     => $need,
+                    'reference'    => 'PRODUCE',
+                    'notes'        => "Produced {$qty} x {$product->product_name}",
+                    'user_id'      => auth()->id(),
+                ]);
+            }
+            $product->update(['stock_quantity' => $product->stock_quantity + $qty]);
+            DB::commit();
+            return back()->with('success', "Produced {$qty} {$product->product_name}. Stock updated.");
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return back()->with('error', 'Produce failed: ' . $e->getMessage());
+        }
+    }
+
+    public function storeVersion(Request $request, Product $product)
+    {
+        $request->validate(['name' => 'required|string|max:255']);
+        $items = $this->parseItems($request);
+        if (empty($items)) return back()->with('error', 'Add at least one ingredient.');
+
+        RecipeVersion::where('product_id', $product->id)->update(['is_active' => false]);
+        RecipeVersion::create([
+            'product_id'  => $product->id,
+            'name'        => $request->name,
+            'items'       => $items,
+            'is_active'   => true,
+            'is_archived' => false,
+        ]);
+        $this->syncActiveToPivot($product, $items);
+        return back()->with('success', 'New recipe version saved and set active.');
+    }
+
+    public function updateVersion(Request $request, Product $product, RecipeVersion $version)
+    {
+        $this->guard($product, $version);
+        $request->validate(['name' => 'required|string|max:255', 'mode' => 'required|in:update,new']);
+        $items = $this->parseItems($request);
+        if (empty($items)) return back()->with('error', 'Add at least one ingredient.');
+
+        if ($request->mode === 'update') {
+            $version->update(['name' => $request->name, 'items' => $items]);
+            if ($version->is_active) $this->syncActiveToPivot($product, $items);
+            return back()->with('success', 'Recipe updated in place.');
+        }
+
+        $name = $request->name;
+        if ($name === $version->name) $name .= ' (copy)';
+        RecipeVersion::where('product_id', $product->id)->update(['is_active' => false]);
+        RecipeVersion::create([
+            'product_id'  => $product->id,
+            'name'        => $name,
+            'items'       => $items,
+            'is_active'   => true,
+            'is_archived' => false,
+        ]);
+        $this->syncActiveToPivot($product, $items);
+        return back()->with('success', 'Saved as a new version and set active.');
+    }
+
+    public function activate(Product $product, RecipeVersion $version)
+    {
+        $this->guard($product, $version);
+        RecipeVersion::where('product_id', $product->id)->update(['is_active' => false]);
+        $version->update(['is_active' => true, 'is_archived' => false]);
+        $this->syncActiveToPivot($product, $version->items ?? []);
+        return back()->with('success', '"' . $version->name . '" is now the active recipe.');
+    }
+
+    public function archive(Product $product, RecipeVersion $version)
+    {
+        $this->guard($product, $version);
+        if ($version->is_active) {
+            $other = RecipeVersion::where('product_id', $product->id)
+                ->where('id', '!=', $version->id)->where('is_archived', false)->first();
+            if ($other) {
+                $other->update(['is_active' => true]);
+                $this->syncActiveToPivot($product, $other->items ?? []);
+            }
+            $version->update(['is_active' => false]);
+        }
+        $version->update(['is_archived' => true]);
+        return back()->with('success', 'Recipe archived.');
+    }
+
+    public function restore(Product $product, RecipeVersion $version)
+    {
+        $this->guard($product, $version);
+        $version->update(['is_archived' => false]);
+        return back()->with('success', 'Recipe restored.');
+    }
+
+    public function destroy(Product $product, RecipeVersion $version)
+    {
+        $this->guard($product, $version);
+        if (RecipeVersion::where('product_id', $product->id)->count() <= 1) {
+            return back()->with('error', 'Keep at least one recipe.');
+        }
+        $wasActive = $version->is_active;
+        $version->delete();
+        if ($wasActive) {
+            $next = RecipeVersion::where('product_id', $product->id)->where('is_archived', false)->first()
+                ?? RecipeVersion::where('product_id', $product->id)->first();
+            if ($next) {
+                $next->update(['is_active' => true]);
+                $this->syncActiveToPivot($product, $next->items ?? []);
+            }
+        }
+        return back()->with('success', 'Recipe permanently deleted.');
+    }
+}
+
+===== app/Http/Controllers/InventoryController.php =====
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\Inventory;
+use App\Models\InventoryLog;
+use App\Models\Site;
+use Illuminate\Http\Request;
+
+class InventoryController extends Controller
+{
+    public function index(Request $request)
+    {
+        $view = $request->get('view') === 'archived' ? 'archived' : 'active';
+
+        $base = Inventory::query();
+        if ($request->search) {
+            $base->where('item_name', 'like', '%' . $request->search . '%');
+        }
+
+        $activeCount   = (clone $base)->whereNull('archived_at')->count();
+        $archivedCount = (clone $base)->whereNotNull('archived_at')->count();
+
+        $q = clone $base;
+        if ($view === 'archived') { $q->whereNotNull('archived_at'); }
+        else { $q->whereNull('archived_at'); }
+
+        $inventories = $q->orderBy('id')->get();
+        $lowStock = $inventories->filter(fn($i) => $i->isLowStock())->count();
+        $damaged  = $inventories->sum('quantity_damaged');
+
+        return view('inventory.index', compact('inventories', 'lowStock', 'damaged', 'view', 'activeCount', 'archivedCount'));
+    }
+
+    public function lowStockReport()
+    {
+        $items = Inventory::whereNull('archived_at')
+            ->orderBy('item_name')
+            ->get()
+            ->filter(function ($i) {
+                $on  = (float) $i->quantity_on_hand;
+                $min = (float) $i->minimum_stock;
+                return $on <= $min * 1.5; // low / critical / out
+            })
+            ->sortBy(function ($i) {
+                $min = (float) $i->minimum_stock;
+                return $min > 0 ? ((float) $i->quantity_on_hand) / $min : 999;
+            })
+            ->values();
+
+        return view('inventory.low-stock-report', compact('items'));
+    }
+    public function create()
+    {
+        $sites = Site::orderBy('site_name')->get();
+        $categories = ['Baking Essentials', 'Dairy & Eggs', 'Flavoring & Fillings', 'Packaging', 'Coffee & Beverage', 'Other'];
+        $units = ['g', 'kg', 'ml', 'liters', 'pcs', 'dozen', 'pack'];
+        return view('inventory.create', compact('sites', 'categories', 'units'));
+    }
+
+    public function store(Request $request)
+    {
+        $validated = $request->validate([
+            'item_name'        => 'required|string|max:255',
+            'category'         => 'required|string|max:255',
+            'unit'             => 'required|string|max:50',
+            'quantity_on_hand' => 'required|numeric|min:0',
+            'quantity_damaged' => 'nullable|numeric|min:0',
+            'minimum_stock'    => 'required|numeric|min:0',
+            'site_id'          => 'nullable|exists:sites,id',
+            'notes'            => 'nullable|string',
+            'unit_cost'        => 'nullable|numeric|min:0',
+        ]);
+
+        $inventory = Inventory::create([
+            'item_name'        => $validated['item_name'],
+            'category'         => $validated['category'],
+            'unit'             => $validated['unit'],
+            'quantity_on_hand' => $validated['quantity_on_hand'],
+            'quantity_damaged' => $validated['quantity_damaged'] ?? 0,
+            'minimum_stock'    => $validated['minimum_stock'],
+            'site_id'          => $validated['site_id'] ?? null,
+            'notes'            => $validated['notes'] ?? null,
+        ]);
+
+        InventoryLog::create([
+            'inventory_id' => $inventory->id,
+            'type'         => 'adjustment',
+            'quantity'     => $inventory->quantity_on_hand,
+            'ref_note'     => 'INITIAL-STOCK',
+            'notes'        => 'Initial inventory record created',
+            'user_id'      => auth()->id(),
+        ]);
+
+        // FIFO: opening lot for the starting quantity, at its unit cost
+        if ((float) $inventory->quantity_on_hand > 0) {
+            \App\Services\InventoryFifoService::receive(
+                $inventory->id,
+                $inventory->quantity_on_hand,
+                $validated['unit_cost'] ?? 0,
+                now()->toDateString(),
+                null
+            );
+        }
+        return redirect()->route('inventory.index')->with('success', 'Inventory item added successfully.');
+    }
+
+    public function show(Inventory $inventory)
+    {
+        $inventory->load(['site', 'logs.user']);
+        return view('inventory.show', compact('inventory'));
+    }
+
+    public function adjust(Request $request, Inventory $inventory)
+    {
+        $validated = $request->validate([
+            'type'     => 'required|in:used,damaged,adjustment',
+            'quantity' => 'required|numeric|min:0.01',
+            'notes'    => 'nullable|string',
+        ]);
+
+        if ($validated['type'] === 'used') {
+            $inventory->decrement('quantity_on_hand', $validated['quantity']);
+        } elseif ($validated['type'] === 'damaged') {
+            $inventory->decrement('quantity_on_hand', $validated['quantity']);
+            $inventory->increment('quantity_damaged', $validated['quantity']);
+        } else {
+            $inventory->increment('quantity_on_hand', $validated['quantity']);
+        }
+
+        InventoryLog::create([
+            'inventory_id' => $inventory->id,
+            'type'         => $validated['type'],
+            'quantity'     => $validated['quantity'],
+            'notes'        => $validated['notes'] ?? null,
+            'user_id'      => auth()->id(),
+        ]);
+
+        return back()->with('success', 'Inventory adjusted successfully.');
+    }
+
+    public function edit(Inventory $inventory)
+    {
+        $sites = Site::orderBy('site_name')->get();
+        $categories = ['Baking Essentials', 'Dairy & Eggs', 'Flavoring & Fillings', 'Packaging', 'Coffee & Beverage', 'Other'];
+        $units = ['g', 'kg', 'ml', 'liters', 'pcs', 'dozen', 'pack'];
+        return view('inventory.edit', compact('inventory', 'sites', 'categories', 'units'));
+    }
+
+    public function update(Request $request, Inventory $inventory)
+    {
+        $validated = $request->validate([
+            'item_name'     => 'required|string|max:255',
+            'category'      => 'required|string|max:255',
+            'unit'          => 'required|string|max:50',
+            'quantity_on_hand' => 'required|numeric|min:0',
+            'minimum_stock'    => 'required|numeric|min:0',
+            'site_id'          => 'nullable|exists:sites,id',
+        ]);
+
+        $oldQty = (float) $inventory->quantity_on_hand;
+        $newQty = isset($validated['quantity_on_hand']) ? (float) $validated['quantity_on_hand'] : $oldQty;
+
+        $inventory->update($validated);
+
+        if ($oldQty != $newQty) {
+            InventoryLog::create([
+                'inventory_id' => $inventory->id,
+                'type'         => 'adjustment',
+                'quantity'     => abs($newQty - $oldQty),
+                'reference'    => 'EDIT-CORRECTION',
+                'notes'        => 'Quantity corrected via Edit: ' . $oldQty . ' -> ' . $newQty,
+                'user_id'      => auth()->id(),
+            ]);
+        }
+
+        return redirect()->route('inventory.index')->with('success', 'Item updated successfully.');
+    }
+
+    public function archive(Inventory $inventory)
+    {
+        $inventory->archived_at = now();
+        $inventory->save();
+        return redirect()->route('inventory.index')->with('success', $inventory->item_name . ' archived.');
+    }
+
+    public function restore(Inventory $inventory)
+    {
+        $inventory->archived_at = null;
+        $inventory->save();
+        return redirect()->route('inventory.index', ['view' => 'archived'])->with('success', $inventory->item_name . ' restored.');
+    }
+
+    public function destroy(Inventory $inventory)
+    {
+        if (auth()->user()->role !== 'Owner') {
+            return back()->with('error', 'Only the Owner can permanently delete records.');
+        }
+        $inventory->delete();
+        return redirect()->route('inventory.index', ['view' => 'archived'])->with('success', 'Item permanently deleted.');
+    }
+}
+
+===== resources/views/inventory/index.blade.php =====
+<x-app-layout>
+<x-slot name="header">Inventory</x-slot>
+<x-slot name="subheader">Raw materials &amp; ingredients &mdash; Matina store</x-slot>
+
+@php
+    $lowCrit = $inventories->filter(function($i){ $on=(float)$i->quantity_on_hand; $min=(float)$i->minimum_stock; return $on <= $min*1.5; })->count();
+    $dmgItems = $inventories->filter(function($i){ return (float)$i->quantity_damaged > 0; })->count();
+    $isOwner = auth()->user()->role === 'Owner';
+@endphp
+
+<style>
+.inv-wrap{max-width:1040px;}
+.inv-alert{padding:12px 16px;border-radius:9px;margin-bottom:16px;font-size:13px;}
+.inv-alert.ok{background:#E7F3EA;border:1px solid #bbf7d0;color:#166534;}
+.inv-alert.err{background:#FBE4DA;border:1px solid #fecaca;color:#991b1b;}
+.seg{display:inline-flex;background:var(--bg);border:1px solid var(--border);border-radius:11px;padding:4px;gap:4px;margin-bottom:16px;}
+.seg a{text-decoration:none;padding:8px 16px;border-radius:8px;font-size:13px;font-weight:700;color:var(--muted);font-family:var(--f-body);display:inline-flex;align-items:center;gap:7px;}
+.seg a.on{background:var(--white);color:var(--gold);box-shadow:0 1px 3px rgba(0,0,0,.08);}
+.seg .count{font-size:11px;background:var(--border);color:var(--text);border-radius:999px;padding:1px 7px;font-weight:700;}
+.seg a.on .count{background:var(--gold);color:#fff;}
+.seg svg{width:14px;height:14px;stroke:currentColor;fill:none;}
+.inv-kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:18px;}
+@media(max-width:640px){.inv-kpis{grid-template-columns:1fr;}}
+.ikpi{background:var(--white);border:1px solid var(--border);border-radius:14px;padding:16px 18px;box-shadow:0 1px 6px rgba(74,44,23,.06);position:relative;overflow:hidden;cursor:pointer;text-align:left;font-family:var(--f-body);transition:transform .14s ease,box-shadow .14s ease,border-color .14s ease;}
+.ikpi::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;}
+.ikpi.k-all::before{background:#15803D;} .ikpi.k-low::before{background:#B45309;} .ikpi.k-dmg::before{background:#C2410C;}
+.ikpi:hover{transform:translateY(-2px);box-shadow:0 4px 8px rgba(74,44,23,.08),0 14px 30px rgba(74,44,23,.12);}
+.ikpi.active{border-color:var(--gold);box-shadow:0 0 0 2px rgba(217,120,44,.22);}
+.ikpi .l{font-size:10.5px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--muted);}
+.ikpi .v{font-family:var(--f-display);font-size:30px;font-weight:800;line-height:1;margin-top:8px;letter-spacing:-1px;font-variant-numeric:tabular-nums;}
+.ikpi.k-low .v{color:#B45309;} .ikpi.k-dmg .v{color:#C2410C;}
+.ikpi .hint{font-size:11px;color:var(--muted);margin-top:5px;opacity:.7;}
+.ikpi.active .hint{opacity:1;color:var(--gold);font-weight:600;}
+.inv-bar{display:flex;align-items:center;gap:12px;margin-bottom:12px;}
+.inv-search{flex:1;min-width:180px;position:relative;}
+.inv-search svg{position:absolute;left:14px;top:50%;transform:translateY(-50%);width:17px;height:17px;stroke:var(--muted);fill:none;}
+.inv-search input{width:100%;padding:11px 14px 11px 40px;border:1px solid var(--border);border-radius:999px;font-size:14px;background:var(--white);color:var(--text);font-family:var(--f-body);}
+.inv-search input:focus{outline:none;border-color:var(--gold);box-shadow:0 0 0 3px rgba(217,120,44,.14);}
+.addbtn{background:var(--gold);color:#fff;border:none;border-radius:9px;padding:10px 16px;font-size:13px;font-weight:700;cursor:pointer;text-decoration:none;white-space:nowrap;}
+.inv-catfilter{padding:10px 14px;border:1px solid var(--border);border-radius:999px;font-size:13px;background:var(--white);color:var(--text);font-family:var(--f-body);cursor:pointer;}
+.inv-catfilter:focus{outline:none;border-color:var(--gold);box-shadow:0 0 0 3px rgba(217,120,44,.14);}
+.inv-card{background:var(--white);border:1px solid var(--border);border-radius:16px;box-shadow:0 1px 6px rgba(74,44,23,.06);overflow:visible;}
+.inv-card table{width:100%;border-collapse:collapse;font-size:13px;}
+.inv-card th{text-align:left;font-size:10.5px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);padding:12px 16px;background:var(--bg);font-weight:700;}
+.inv-card td{padding:13px 16px;border-bottom:1px solid var(--border);vertical-align:middle;}
+.inv-card tbody tr:last-child td{border-bottom:none;}
+.inv-card tbody tr{transition:background .12s ease;}
+.inv-card tbody tr:hover{background:var(--bg);}
+.item{font-weight:700;color:var(--text);}
+tr.arch .item{color:var(--muted);}
+.cat{color:var(--gold);font-size:12.5px;}
+.arch-meta{font-size:11px;color:var(--muted);margin-top:2px;}
+.stockcell{display:flex;align-items:center;gap:9px;flex-wrap:wrap;}
+.stockval{font-variant-numeric:tabular-nums;font-weight:600;}
+.stockval.crit,.stockval.out{color:#C2410C;}
+.pill{font-size:10px;font-weight:800;letter-spacing:.3px;padding:2px 8px;border-radius:999px;text-transform:uppercase;}
+.pill.ok{background:#E7F3EA;color:#15803D;} .pill.low{background:#FBEBD6;color:#B45309;} .pill.crit{background:#FBE4DA;color:#C2410C;} .pill.out{background:#FBE4DA;color:#C2410C;}
+.badge{display:inline-block;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.3px;padding:2px 8px;border-radius:999px;background:var(--bg);color:var(--muted);border:1px solid var(--border);}
+.dmgnote{display:inline-flex;align-items:center;gap:4px;font-size:11px;color:#C2410C;margin-top:3px;font-weight:600;}
+.min{color:var(--muted);font-variant-numeric:tabular-nums;}
+.actcell{width:46px;padding-right:10px;text-align:right;position:relative;}
+.kebab{width:30px;height:30px;border-radius:8px;border:1px solid transparent;background:none;color:var(--muted);font-size:18px;line-height:1;cursor:pointer;display:inline-grid;place-items:center;opacity:0;transition:opacity .12s ease,background .12s ease;}
+.inv-card tbody tr:hover .kebab{opacity:1;}
+.kebab:hover{background:var(--white);border-color:var(--border);color:var(--text);}
+.menu{position:absolute;top:38px;right:10px;background:var(--white);border:1px solid var(--border);border-radius:11px;box-shadow:0 8px 24px rgba(0,0,0,.17);overflow:hidden;z-index:20;min-width:165px;}
+.menu a,.menu button{display:flex;width:100%;align-items:center;gap:9px;padding:10px 14px;font-size:13px;font-weight:600;color:var(--text);text-decoration:none;cursor:pointer;background:none;border:none;font-family:var(--f-body);text-align:left;}
+.menu a:hover,.menu button:hover{background:var(--bg);}
+.menu .warn{color:#C2410C;border-top:1px solid var(--border);}
+.menu .good{color:#15803D;}
+.menu svg{width:15px;height:15px;stroke:currentColor;fill:none;}
+.noresult{display:none;text-align:center;color:var(--muted);padding:34px;font-size:14px;}
+.legend{display:flex;gap:16px;flex-wrap:wrap;margin-top:14px;font-size:11.5px;color:var(--muted);}
+.legend span{display:inline-flex;align-items:center;gap:6px;}
+.legend i{width:9px;height:9px;border-radius:50%;display:inline-block;}
+</style>
+
+<div class="inv-wrap">
+    @if(session('success'))
+        <div class="inv-alert ok">{{ session('success') }}</div>
+    @endif
+    @if(session('error'))
+        <div class="inv-alert err">{{ session('error') }}</div>
+    @endif
+
+    <div class="seg">
+        <a href="{{ route('inventory.index', ['view' => 'active']) }}" class="{{ $view === 'active' ? 'on' : '' }}">Active <span class="count">{{ $activeCount }}</span></a>
+        <a href="{{ route('inventory.index', ['view' => 'archived']) }}" class="{{ $view === 'archived' ? 'on' : '' }}">
+            <svg viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M21 8v13H3V8M1 3h22v5H1zM10 12h4"/></svg>
+            Archived <span class="count">{{ $archivedCount }}</span>
+        </a>
+    </div>
+
+    @if($view === 'active')
+        <div class="inv-kpis" id="kpis">
+            <button class="ikpi k-all active" data-filter="all" onclick="setFilter(this)"><div class="l">Total Items</div><div class="v">{{ $inventories->count() }}</div><div class="hint">showing all</div></button>
+            <button class="ikpi k-low" data-filter="low" onclick="setFilter(this)"><div class="l">Low / Critical Stock</div><div class="v">{{ $lowCrit }}</div><div class="hint">click to filter</div></button>
+            <button class="ikpi k-dmg" data-filter="dmg" onclick="setFilter(this)"><div class="l">With Damaged Units</div><div class="v">{{ $dmgItems }}</div><div class="hint">click to filter</div></button>
+        </div>
+    @endif
+
+    <div class="inv-bar">
+        <div class="inv-search">
+            <svg stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-4.35-4.35M17 11a6 6 0 11-12 0 6 6 0 0112 0z"/></svg>
+            <input type="text" id="search" placeholder="Search items..." oninput="applyFilters()">
+        </div>
+        <select id="catfilter" class="inv-catfilter" onchange="applyFilters()"><option value="">All Categories</option></select>
+        @if($view === 'active')
+            @can('admin')
+                <a class="addbtn" href="{{ route('inventory.low-stock-report') }}" style="background:#fff;color:var(--gold);border:1px solid var(--border);margin-right:8px;">Restock List</a>
+                <button type="button" class="addbtn" onclick="openAddInv()">+ Add Item</button>
+            @endcan
+        @endif
+    </div>
+
+    <div class="inv-card">
+        <table>
+            <thead><tr><th>Item</th><th>Category</th><th>Stock</th><th>Min Stock</th><th class="actcell"></th></tr></thead>
+            <tbody>
+            @forelse($inventories as $inv)
+                @php
+                    $on=(float)$inv->quantity_on_hand; $min=(float)$inv->minimum_stock; $dmg=(float)$inv->quantity_damaged;
+                    $t = $on<=0 ? 'out' : ($on<=$min ? 'crit' : ($on<=$min*1.5 ? 'low' : 'ok'));
+                    $labels=['ok'=>'OK','low'=>'Low','crit'=>'Critical','out'=>'Out'];
+                    $archived = $view === 'archived';
+                @endphp
+                <tr data-tier="{{ $t }}" data-dmg="{{ $dmg>0?'1':'0' }}" data-name="{{ strtolower($inv->item_name) }}" data-cat="{{ strtolower($inv->category) }}" class="{{ $archived ? 'arch' : '' }}">
+                    <td>
+                        <div class="item">{{ $inv->item_name }}
+                            @if($archived)
+                                <span class="badge">Archived</span>
+                            @endif
+                        </div>
+                        @if($archived && $inv->archived_at)
+                            <div class="arch-meta">Archived {{ \Carbon\Carbon::parse($inv->archived_at)->format('M j, Y') }}</div>
+                        @endif
+                        @if(!$archived && $dmg>0)
+                            <div class="dmgnote">&#9888; {{ number_format($dmg,2) }} {{ $inv->unit }} damaged</div>
+                        @endif
+                    </td>
+                    <td><span class="cat">{{ $inv->category }}</span></td>
+                    <td>
+                        @if($archived)
+                            <span class="stockval">{{ number_format($on,2) }} {{ $inv->unit }}</span>
+                        @else
+                            <div class="stockcell"><span class="stockval {{ in_array($t,['crit','out']) ? $t : '' }}">{{ number_format($on,2) }} {{ $inv->unit }}</span><span class="pill {{ $t }}">{{ $labels[$t] }}</span></div>
+                        @endif
+                    </td>
+                    <td><span class="min">{{ number_format($min,2) }} {{ $inv->unit }}</span></td>
+                    <td class="actcell">
+                        <button class="kebab" aria-label="Menu" onclick="toggleMenu(event,this)">&#8942;</button>
+                        <div class="menu" hidden>
+                            @if($archived)
+                                @can('admin')
+                                    <button class="good" onclick="document.getElementById('rest{{ $inv->id }}').submit();"><svg viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 12a9 9 0 109-9 9 9 0 00-7 3.3M3 4v4h4"/></svg> Restore</button>
+                                    <form id="rest{{ $inv->id }}" method="POST" action="{{ route('inventory.restore',$inv) }}" style="display:none">@csrf @method('PATCH')</form>
+                                @endcan
+                                @if($isOwner)
+                                    <button class="warn" onclick="if(confirm('Permanently DELETE this item? This cannot be undone.')){document.getElementById('del{{ $inv->id }}').submit();}"><svg viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m2 0v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6"/></svg> Delete permanently</button>
+                                    <form id="del{{ $inv->id }}" method="POST" action="{{ route('inventory.destroy',$inv) }}" style="display:none">@csrf @method('DELETE')</form>
+                                @endif
+                            @else
+                                <a href="{{ route('inventory.show',$inv) }}"><svg viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" d="M2.5 12C3.7 7.9 7.5 5 12 5s8.3 2.9 9.5 7c-1.2 4.1-5 7-9.5 7s-8.3-2.9-9.5-7z"/></svg> View</a>
+                                @can('admin')
+                                    <a href="{{ route('inventory.edit',$inv) }}"><svg viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7M18.5 2.5a2.1 2.1 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg> Edit</a>
+                                    <button class="warn" onclick="if(confirm('Archive this item? It stays in records but is hidden.')){document.getElementById('arch{{ $inv->id }}').submit();}"><svg viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M21 8v13H3V8M1 3h22v5H1zM10 12h4"/></svg> Archive</button>
+                                    <form id="arch{{ $inv->id }}" method="POST" action="{{ route('inventory.archive',$inv) }}" style="display:none">@csrf @method('PATCH')</form>
+                                @endcan
+                            @endif
+                        </div>
+                    </td>
+                </tr>
+            @empty
+                <tr><td colspan="5" style="text-align:center;padding:30px;color:var(--muted)">{{ $view==='archived' ? 'No archived items.' : 'No items yet.' }}</td></tr>
+            @endforelse
+            </tbody>
+        </table>
+        <div class="noresult" id="noresult">No items match your search.</div>
+    </div>
+
+    @if($view === 'active')
+        <div class="legend">
+            <span><i style="background:#15803D"></i> OK</span>
+            <span><i style="background:#B45309"></i> Low</span>
+            <span><i style="background:#C2410C"></i> Critical</span>
+            <span><i style="background:#C2410C"></i> Out</span>
+        </div>
+    @endif
+</div>
+
+<script>
+var curFilter='all';
+function setFilter(btn){
+    document.querySelectorAll('.ikpi').forEach(function(k){k.classList.remove('active');});
+    btn.classList.add('active');
+    curFilter=btn.getAttribute('data-filter');
+    document.querySelectorAll('.ikpi .hint').forEach(function(h){h.textContent='click to filter';});
+    btn.querySelector('.hint').textContent = curFilter==='all'?'showing all':'filtered';
+    applyFilters();
+}
+function applyFilters(){
+    var term=(document.getElementById('search').value||'').toLowerCase().trim();
+    var _cf=document.getElementById('catfilter'); window.__catSel=_cf?_cf.value.toLowerCase():'';
+    var shown=0;
+    document.querySelectorAll('.inv-card tbody tr').forEach(function(r){
+        if(!r.getAttribute('data-name')) return;
+        var t=r.getAttribute('data-tier'), d=r.getAttribute('data-dmg'), nm=r.getAttribute('data-name')||'';
+        var okFilter = curFilter==='all' || (curFilter==='low' && (t==='low'||t==='crit'||t==='out')) || (curFilter==='dmg' && d==='1');
+        var okName = nm.indexOf(term)!==-1;
+        var okCat = !window.__catSel || (r.getAttribute('data-cat')||'')===window.__catSel;
+        var show = okFilter && okName && okCat;
+        r.style.display = show?'':'none'; if(show) shown++;
+    });
+    var nr=document.getElementById('noresult'); if(nr) nr.style.display = shown===0?'block':'none';
+}
+function closeMenus(){ document.querySelectorAll('.menu').forEach(function(m){m.hidden=true;}); }
+function toggleMenu(e,btn){ e.stopPropagation(); var m=btn.nextElementSibling; var w=m.hidden; closeMenus(); m.hidden=!w; }
+document.addEventListener('click', closeMenus);
+(function(){var sel=document.getElementById("catfilter");if(!sel)return;var seen={};document.querySelectorAll(".inv-card tbody tr[data-cat]").forEach(function(r){var k=r.getAttribute("data-cat");if(!k||seen[k])return;seen[k]=1;var o=document.createElement("option");o.value=k;o.textContent=k.replace(/\b\w/g,function(m){return m.toUpperCase();});sel.appendChild(o);});})();
+</script>
+
+<!-- Add Inventory Item modal -->
+@php $aimSites = \App\Models\Site::orderBy('site_name')->get(); $aimUserSite = auth()->user()->site_id; @endphp
+<div class="aim-bg" id="addInvBg">
+  <div class="aim-modal">
+    <div class="aim-head">
+      <div>
+        <h3>Add inventory item</h3>
+        <p class="aim-sub">A compact modal &mdash; no full-page dead space.</p>
+      </div>
+      <button type="button" class="aim-x" onclick="closeAddInv()" aria-label="Close">&times;</button>
+    </div>
+    <form method="POST" action="{{ route('inventory.store') }}">
+      @csrf
+      <div class="aim-body">
+        <div class="aim-fg">
+          <label>Item name <span class="aim-req">*</span></label>
+          <input type="text" name="item_name" placeholder="e.g. All-Purpose Flour" required autofocus>
+        </div>
+        <div class="aim-fg2">
+          <div class="aim-fg">
+            <label>Category <span class="aim-req">*</span></label>
+            <select name="category" required>
+              <option value="">&mdash; Select &mdash;</option>
+              @foreach(['Baking Essentials','Dairy & Eggs','Flavoring & Fillings','Packaging','Coffee & Beverage','Other'] as $cat)
+                <option value="{{ $cat }}">{{ $cat }}</option>
+              @endforeach
+            </select>
+          </div>
+          <div class="aim-fg">
+            <label>Unit <span class="aim-req">*</span></label>
+            <select name="unit" required>
+              <option value="">&mdash; Select &mdash;</option>
+              @foreach(['g','kg','ml','liters','pcs','dozen','pack'] as $u)
+                <option value="{{ $u }}">{{ $u }}</option>
+              @endforeach
+            </select>
+          </div>
+        </div>
+        <div class="aim-fg2">
+          <div class="aim-fg">
+            <label>Starting qty <span class="aim-req">*</span></label>
+            <input type="number" name="quantity_on_hand" step="0.01" min="0" value="0" required>
+          </div>
+          <div class="aim-fg">
+            <label>Unit cost (&#8369;)</label>
+            <input type="number" name="unit_cost" step="0.01" min="0" value="0" placeholder="0.00">
+          </div>
+        </div>
+        <div class="aim-fg2">
+          <div class="aim-fg">
+            <label>Min stock (alert) <span class="aim-req">*</span></label>
+            <input type="number" name="minimum_stock" step="0.01" min="0" value="0" required>
+          </div>
+          <div class="aim-fg">
+            <label>Site</label>
+            <select name="site_id">
+              <option value="">&mdash; None &mdash;</option>
+              @foreach($aimSites as $s)
+                <option value="{{ $s->id }}" {{ $aimUserSite == $s->id ? 'selected' : '' }}>{{ $s->site_name }}</option>
+              @endforeach
+            </select>
+          </div>
+        </div>
+        <div class="aim-fg">
+          <label>Notes</label>
+          <textarea name="notes" rows="2"></textarea>
+        </div>
+      </div>
+      <div class="aim-foot">
+        <button type="button" class="aim-ghost" onclick="closeAddInv()">Cancel</button>
+        <button type="submit" class="aim-primary">Add item</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<style>
+.aim-bg{display:none;position:fixed;inset:0;background:rgba(46,28,16,.55);z-index:70;align-items:center;justify-content:center;padding:16px;}
+.aim-bg.show{display:flex;}
+.aim-modal{background:var(--white);border-radius:18px;max-width:500px;width:100%;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.35);}
+.aim-head{display:flex;align-items:flex-start;justify-content:space-between;padding:18px 20px;border-bottom:1px solid var(--border);}
+.aim-head h3{font-family:var(--f-display);font-size:18px;margin:0;}
+.aim-sub{font-size:12px;color:var(--muted);margin:3px 0 0;}
+.aim-x{background:none;border:none;color:var(--muted);font-size:22px;line-height:1;cursor:pointer;padding:0 2px;}
+.aim-x:hover{color:var(--text);}
+.aim-body{padding:18px 20px;}
+.aim-fg{margin-bottom:14px;}
+.aim-fg2{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+.aim-modal label{display:block;font-size:12.5px;font-weight:700;color:var(--text);margin-bottom:6px;}
+.aim-req{color:#C2410C;}
+.aim-modal input,.aim-modal select,.aim-modal textarea{width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:9px;font-size:14px;background:var(--white);color:var(--text);font-family:var(--f-body);box-sizing:border-box;}
+.aim-modal input:focus,.aim-modal select:focus,.aim-modal textarea:focus{outline:none;border-color:var(--gold);box-shadow:0 0 0 3px rgba(217,120,44,.14);}
+.aim-foot{padding:14px 20px;border-top:1px solid var(--border);display:flex;gap:10px;justify-content:flex-end;}
+.aim-ghost{background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:10px;padding:11px 18px;font-size:14px;font-weight:700;cursor:pointer;font-family:var(--f-body);}
+.aim-primary{background:var(--gold);color:#fff;border:none;border-radius:10px;padding:11px 22px;font-size:14px;font-weight:700;cursor:pointer;font-family:var(--f-body);}
+</style>
+
+<script>
+function openAddInv(){ document.getElementById('addInvBg').classList.add('show'); }
+function closeAddInv(){ document.getElementById('addInvBg').classList.remove('show'); }
+document.getElementById('addInvBg').addEventListener('click', function(e){ if(e.target === this) closeAddInv(); });
+</script>
+</x-app-layout>
+
+
+===== app/Models/InventoryLog.php =====
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
+
+class InventoryLog extends Model
+{
+    use HasFactory;
+
+    protected $table = 'inventory_logs';
+
+    // ← FIX: was wrong before — had Inventory fields instead of InventoryLog fields
+    protected $fillable = [
+        'inventory_id',
+        'delivery_id',
+        'type',        // received | used | damaged | adjustment
+        'quantity',
+        'reference',
+        'notes',
+        'user_id',
+    ];
+
+    public const TYPES = [
+        'received'   => ['label' => 'Received',   'color' => 'text-green-700'],
+        'used'       => ['label' => 'Used',        'color' => 'text-blue-700'],
+        'damaged'    => ['label' => 'Damaged',     'color' => 'text-red-700'],
+        'adjustment' => ['label' => 'Adjustment',  'color' => 'text-gray-700'],
+    ];
+
+    public function inventory() { return $this->belongsTo(Inventory::class); }
+    public function delivery()  { return $this->belongsTo(Delivery::class); }
+    public function user()      { return $this->belongsTo(User::class); }
+}
+
+===== database/migrations/2026_09_23_163226_create_trove_tables.php =====
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+/**
+ * Trove â€” full database schema (single migration).
+ * Tables are created in foreign-key dependency order so everything
+ * migrates cleanly in one pass.
+ */
+return new class extends Migration
+{
+    public function up(): void
+    {
+        // 1. SITES (Matina commissary, Jacinto branch, etc.)
+        Schema::create('sites', function (Blueprint $table) {
+            $table->id();
+            $table->string('site_name', 100);
+            $table->string('street', 100)->nullable();
+            $table->string('city', 100)->nullable();
+            $table->timestamps();
+        });
+
+        // 2. USERS (Owner / Manager / Staff)
+        Schema::create('users', function (Blueprint $table) {
+            $table->id();
+            $table->string('first_name', 100);
+            $table->string('last_name', 100);
+            $table->string('mobile_no', 20)->nullable();
+            $table->string('email', 150)->unique();
+            $table->string('password');
+            $table->string('role', 50)->default('Staff');
+            $table->foreignId('site_id')->nullable()->constrained('sites')->nullOnDelete();
+            $table->rememberToken();
+            $table->timestamps();
+        });
+
+        // Laravel password reset + sessions (standard)
+        Schema::create('password_reset_tokens', function (Blueprint $table) {
+            $table->string('email')->primary();
+            $table->string('token');
+            $table->timestamp('created_at')->nullable();
+        });
+
+        Schema::create('sessions', function (Blueprint $table) {
+            $table->string('id')->primary();
+            $table->foreignId('user_id')->nullable()->index();
+            $table->string('ip_address', 45)->nullable();
+            $table->text('user_agent')->nullable();
+            $table->longText('payload');
+            $table->integer('last_activity')->index();
+        });
+
+        // 3. SUPPLIERS (optional â€” links to a supplier User account)
+        Schema::create('suppliers', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('user_id')->nullable()->constrained('users')->nullOnDelete();
+            $table->string('name');
+            $table->string('email')->nullable();
+            $table->string('phone')->nullable();
+            $table->string('address')->nullable();
+            $table->string('category')->nullable();
+            $table->timestamps();
+        });
+
+        // 4. PRODUCTS (finished goods: cakes, pastries, coffee)
+        Schema::create('products', function (Blueprint $table) {
+            $table->id();
+            $table->string('product_name', 150);
+            $table->text('description')->nullable();
+            $table->string('category', 50)->nullable();
+            $table->decimal('price', 10, 2)->default(0.00);
+            $table->integer('stock_quantity')->default(0);
+            $table->string('status', 20)->default('active');
+            $table->foreignId('site_id')->nullable()->constrained('sites')->nullOnDelete();
+            $table->timestamps();
+        });
+
+        // 5. INVENTORY (raw materials / ingredients)
+        Schema::create('inventory', function (Blueprint $table) {
+            $table->id();
+            $table->string('item_name');
+            $table->string('category');
+            $table->string('unit');
+            $table->decimal('quantity_on_hand', 10, 2)->default(0);
+            $table->decimal('quantity_damaged', 10, 2)->default(0);
+            $table->decimal('minimum_stock', 10, 2)->default(0);
+            $table->foreignId('site_id')->nullable()->constrained('sites')->nullOnDelete();
+            $table->text('notes')->nullable();
+            $table->timestamps();
+        });
+
+        // 6. ORDERS (sales / customer orders)
+        Schema::create('orders', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('user_id')->nullable()->constrained('users')->nullOnDelete();
+            $table->foreignId('site_id')->nullable()->constrained('sites')->nullOnDelete();
+            $table->string('customer_name', 100)->nullable();
+            $table->string('order_type', 50)->default('Dine-in');
+            $table->text('design_description')->nullable();
+            $table->date('needed_by_date')->nullable();
+            $table->decimal('total_amount', 12, 2)->default(0.00);
+            $table->decimal('deposit_amount', 12, 2)->default(0.00);
+            $table->string('status', 50)->default('Pending');
+            $table->timestamps();
+        });
+
+        // 7. ORDER ITEMS
+        Schema::create('order_items', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('order_id')->constrained('orders')->cascadeOnDelete();
+            $table->foreignId('product_id')->nullable()->constrained('products')->nullOnDelete();
+            $table->integer('quantity')->default(1);
+            $table->decimal('price', 10, 2)->default(0.00);
+            $table->timestamps();
+        });
+
+        // 8. PRODUCT MATERIALS (recipe: which ingredients a product uses)
+        Schema::create('product_materials', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('product_id')->constrained('products')->cascadeOnDelete();
+            $table->foreignId('inventory_id')->constrained('inventory')->cascadeOnDelete();
+            $table->decimal('quantity_used', 8, 2);
+            $table->timestamps();
+            $table->unique(['product_id', 'inventory_id']);
+        });
+
+        // 9. DELIVERIES (commissary -> branch)
+        Schema::create('deliveries', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('order_id')->nullable()->constrained('orders')->nullOnDelete();
+            $table->foreignId('supplier_id')->nullable()->constrained('suppliers')->nullOnDelete();
+            $table->string('delivery_number')->unique();
+            $table->date('delivered_at')->nullable();
+            $table->string('received_by')->nullable();
+            $table->string('status')->default('pending');
+            $table->text('notes')->nullable();
+            $table->timestamps();
+        });
+
+        // 10. DELIVERY ITEMS
+        Schema::create('delivery_items', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('delivery_id')->constrained('deliveries')->cascadeOnDelete();
+            $table->foreignId('order_item_id')->nullable()->constrained('order_items')->nullOnDelete();
+            $table->string('item_name');
+            $table->string('category')->nullable();
+            $table->string('unit')->nullable();
+            $table->decimal('quantity_ordered', 10, 2)->default(0);
+            $table->decimal('quantity_delivered', 10, 2)->default(0);
+            $table->decimal('quantity_damaged', 10, 2)->default(0);
+            $table->string('condition')->default('good');
+            $table->text('damage_notes')->nullable();
+            $table->timestamps();
+        });
+
+        // 11. INVENTORY LOGS (audit trail of stock movements)
+        Schema::create('inventory_logs', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('inventory_id')->constrained('inventory')->cascadeOnDelete();
+            $table->foreignId('delivery_id')->nullable()->constrained('deliveries')->nullOnDelete();
+            $table->string('type');          // received | used | damaged | adjustment
+            $table->decimal('quantity', 10, 2);
+            $table->string('reference')->nullable();
+            $table->text('notes')->nullable();
+            $table->foreignId('user_id')->nullable()->constrained('users')->nullOnDelete();
+            $table->timestamps();
+        });
+    }
+
+    public function down(): void
+    {
+        Schema::dropIfExists('inventory_logs');
+        Schema::dropIfExists('delivery_items');
+        Schema::dropIfExists('deliveries');
+        Schema::dropIfExists('product_materials');
+        Schema::dropIfExists('order_items');
+        Schema::dropIfExists('orders');
+        Schema::dropIfExists('inventory');
+        Schema::dropIfExists('products');
+        Schema::dropIfExists('suppliers');
+        Schema::dropIfExists('sessions');
+        Schema::dropIfExists('password_reset_tokens');
+        Schema::dropIfExists('users');
+        Schema::dropIfExists('sites');
+    }
+};
+
+===== app/Models/RecipeVersion.php =====
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+
+class RecipeVersion extends Model
+{
+    protected $table = 'recipe_versions';
+
+    protected $fillable = ['product_id', 'name', 'items', 'is_active', 'is_archived'];
+
+    protected $casts = [
+        'items'       => 'array',
+        'is_active'   => 'boolean',
+        'is_archived' => 'boolean',
+    ];
+
+    public function product()
+    {
+        return $this->belongsTo(Product::class);
+    }
+}
+
+===== app/Models/ProductRawMaterial.php =====
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+
+class ProductRawMaterial extends Model
+{
+    protected $fillable = ['product_id', 'raw_material_id', 'quantity_needed'];
+
+    public function product()
+    {
+        return $this->belongsTo(Product::class);
+    }
+
+    public function rawMaterial()
+    {
+        return $this->belongsTo(RawMaterial::class);
+    }
+}
+
+===== app/Models/Product.php =====
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+
+class Product extends Model
+{
+    protected $table = 'products';
+
+    protected $fillable = [
+        'product_name',
+        'description',
+        'category',
+        'price',
+        'stock_quantity',
+        'status',
+        'site_id',
+        'image_path',
+    ];
+
+    protected $casts = [
+        'price' => 'float',
+    ];
+
+    public function site()
+    {
+        return $this->belongsTo(Site::class);
+    }
+
+    // Materials (inventory items) used in this product - the recipe
+    public function materials()
+    {
+       return $this->belongsToMany(Inventory::class, 'product_raw_materials')
+            ->withPivot('quantity_needed') // Uses quantity_needed from product_raw_materials
+            ->withTimestamps();
+    }
+
+    public function orderItems()
+    {
+        return $this->hasMany(OrderItem::class);
+    }
+}
+
+===== app/Models/Inventory.php =====
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+
+class Inventory extends Model
+{
+    protected $table = 'inventory';
+
+    protected $fillable = [
+        'item_name',
+        'category',
+        'unit',
+        'quantity_on_hand',
+        'quantity_damaged',
+        'minimum_stock',
+        'site_id',
+        'notes',
+    ];
+
+    public function site()
+    {
+        return $this->belongsTo(Site::class);
+    }
+
+    public function logs()
+    {
+        return $this->hasMany(InventoryLog::class);
+    }
+
+    public function usableQuantity()
+    {
+        return $this->quantity_on_hand - $this->quantity_damaged;
+    }
+
+    public function isLowStock()
+    {
+        return $this->usableQuantity() <= $this->minimum_stock;
+    }
+}
+
+===== app/Models/RawMaterial.php =====
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+
+class RawMaterial extends Model
+{
+    protected $fillable = ['name', 'unit', 'stock_quantity', 'site_id'];
+
+    public function site()
+    {
+        return $this->belongsTo(Site::class);
+    }
+
+    public function products()
+    {
+        return $this->belongsToMany(Product::class, 'product_raw_materials')
+                     ->withPivot('quantity_needed');
+    }
+}
+
+===== routes/web.php =====
+<?php
+use App\Http\Controllers\ProductController;
+use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\InventoryController;
+use App\Http\Controllers\OrderController;
+use App\Http\Controllers\ProfileController;
+use App\Http\Controllers\ExpenseController;
+use Illuminate\Support\Facades\Route;
+
+Route::get('/', fn() => auth()->check() ? redirect()->route('dashboard') : redirect()->route('login'))->name('welcome');
+
+Route::middleware(['auth', \App\Http\Middleware\EnsureActive::class])->group(function () {
+
+    Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
+    Route::get('/profile',    [ProfileController::class, 'edit'])->name('profile.edit');
+    Route::patch('/profile',  [ProfileController::class, 'update'])->name('profile.update');
+    Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
+
+    // ── ORDERS ── (create/store BEFORE the {order} wildcard)
+    Route::get('/orders', [OrderController::class, 'index'])->name('orders.index');
+    Route::middleware('admin')->group(function () {
+        Route::get('/orders/create', [OrderController::class, 'create'])->name('orders.create');
+        Route::post('/orders', [OrderController::class, 'store'])->name('orders.store');
+        Route::delete('/orders/{order}', [OrderController::class, 'destroy'])->name('orders.destroy');
+        Route::patch('/orders/{order}/status', [OrderController::class, 'updateStatus'])->name('orders.status');
+    });
+    Route::get('/orders/{order}', [OrderController::class, 'show'])->name('orders.show');
+
+    Route::middleware('admin')->group(function () {
+    });
+
+
+    // ── INVENTORY ──
+    Route::get('/inventory', [InventoryController::class, 'index'])->name('inventory.index');
+    Route::middleware('admin')->group(function () {
+        Route::get('/inventory/create', [InventoryController::class, 'create'])->name('inventory.create');
+        Route::post('/inventory', [InventoryController::class, 'store'])->name('inventory.store');
+        Route::patch('/inventory/{inventory}/adjust', [InventoryController::class, 'adjust'])->name('inventory.adjust');
+        Route::get('/inventory/{inventory}/edit', [InventoryController::class, 'edit'])->name('inventory.edit');
+        Route::put('/inventory/{inventory}', [InventoryController::class, 'update'])->name('inventory.update');
+        Route::delete('/inventory/{inventory}', [InventoryController::class, 'destroy'])->name('inventory.destroy');
+    });
+    Route::get('/inventory/{inventory}', [InventoryController::class, 'show'])->name('inventory.show');
+
+    // ── PRODUCTS ──
+    Route::get('/products', [ProductController::class, 'index'])->name('products.index');
+    Route::middleware('admin')->group(function () {
+        Route::get('/products/create', [ProductController::class, 'create'])->name('products.create');
+        Route::post('/products', [ProductController::class, 'store'])->name('products.store');
+    });
+    Route::get('/products/{product}', [ProductController::class, 'show'])->name('products.show');
+    
+    Route::middleware('admin')->group(function () {
+    Route::get('/products/create',                  [ProductController::class, 'create'])->name('products.create');
+    Route::post('/products',                        [ProductController::class, 'store'])->name('products.store');
+    Route::get('/products/{product}/edit',          [ProductController::class, 'edit'])->name('products.edit');
+    Route::put('/products/{product}',               [ProductController::class, 'update'])->name('products.update');
+    Route::delete('/products/{product}',            [ProductController::class, 'destroy'])->name('products.destroy');
+});
+
+});
+
+// Disable public registration - Owner/Manager create accounts in Users module
+Route::match(['get', 'post'], 'register', function () {
+    return redirect()->route('login');
+});
+
+require __DIR__ . '/auth.php';
+
+// ===== Branch Transfers (Trove) =====
+Route::middleware(['auth'])->group(function () {
+    Route::get('/branch-transfers', [\App\Http\Controllers\BranchTransferController::class, 'index'])->name('branch-transfers.index');
+    Route::get('/branch-transfers/create', [\App\Http\Controllers\BranchTransferController::class, 'create'])->name('branch-transfers.create');
+    Route::post('/branch-transfers', [\App\Http\Controllers\BranchTransferController::class, 'store'])->name('branch-transfers.store');
+    Route::get('/branch-transfers/{batch}', [\App\Http\Controllers\BranchTransferController::class, 'show'])->name('branch-transfers.show');
+    Route::put('/branch-transfers/{batch}/returns', [\App\Http\Controllers\BranchTransferController::class, 'logReturns'])->name('branch-transfers.returns');
+});
+
+// ===== Reports (Trove) =====
+Route::middleware(['auth'])->group(function () {
+    Route::get('/reports', [\App\Http\Controllers\ReportController::class, 'index'])->name('reports.index');
+});
+
+// ===== Commissions (Trove) =====
+Route::middleware(['auth'])->group(function () {
+    Route::get('/commissions', [\App\Http\Controllers\CommissionController::class, 'index'])->name('commissions.index');
+    Route::get('/commissions/create', [\App\Http\Controllers\CommissionController::class, 'create'])->name('commissions.create');
+    Route::post('/commissions', [\App\Http\Controllers\CommissionController::class, 'store'])->name('commissions.store');
+    Route::get('/commissions/{commission}', [\App\Http\Controllers\CommissionController::class, 'show'])->name('commissions.show');
+    Route::put('/commissions/{commission}/status', [\App\Http\Controllers\CommissionController::class, 'updateStatus'])->name('commissions.status');
+});
+
+// ---- User Management (Owner & Manager) ----
+Route::middleware(['auth', 'admin', \App\Http\Middleware\EnsureActive::class])->group(function () {
+    Route::get('/users',                 [\App\Http\Controllers\UserController::class, 'index'])->name('users.index');
+    Route::get('/users/create',          [\App\Http\Controllers\UserController::class, 'create'])->name('users.create');
+    Route::post('/users',                [\App\Http\Controllers\UserController::class, 'store'])->name('users.store');
+    Route::get('/users/{user}/edit',     [\App\Http\Controllers\UserController::class, 'edit'])->name('users.edit');
+    Route::put('/users/{user}',          [\App\Http\Controllers\UserController::class, 'update'])->name('users.update');
+    Route::patch('/users/{user}/toggle', [\App\Http\Controllers\UserController::class, 'toggleStatus'])->name('users.toggle');
+});
+
+// ===== Expenses & Financial Statement (Owner & Manager only) =====
+// No edit/delete routes exist for expenses on purpose: entries are voided, never removed.
+Route::middleware(['auth', 'admin', \App\Http\Middleware\EnsureActive::class])->group(function () {
+    Route::get('/expenses', [\App\Http\Controllers\ExpenseController::class, 'index'])->name('expenses.index');
+    Route::post('/expenses', [\App\Http\Controllers\ExpenseController::class, 'store'])->name('expenses.store');
+    Route::post('/expenses/{expense}/void', [\App\Http\Controllers\ExpenseController::class, 'void'])->name('expenses.void');
+    Route::get('/expenses/{expense}/receipt', [\App\Http\Controllers\ExpenseController::class, 'receipt'])->name('expenses.receipt');
+
+    Route::get('/financial-statement', [\App\Http\Controllers\FinancialStatementController::class, 'index'])->name('financial-statement.index');
+    Route::post('/financial-statement/close', [\App\Http\Controllers\FinancialStatementController::class, 'close'])->name('financial-statement.close');
+    Route::get('/financial-audit-log', [\App\Http\Controllers\FinancialStatementController::class, 'auditLog'])->name('financial-audit-log.index');
+});
+// ---- Inventory Archive (Owner & Manager) ----
+Route::middleware(['auth', 'admin', \App\Http\Middleware\EnsureActive::class])->group(function () {
+    Route::patch('/inventory/{inventory}/archive', [\App\Http\Controllers\InventoryController::class, 'archive'])->name('inventory.archive');
+    Route::patch('/inventory/{inventory}/restore', [\App\Http\Controllers\InventoryController::class, 'restore'])->name('inventory.restore');
+});
+
+// ===== Settings: Backup & Restore (Owner only) =====
+Route::middleware(['auth', \App\Http\Middleware\EnsureActive::class])->group(function () {
+    Route::get('/settings/backup/download', [\App\Http\Controllers\SettingsController::class, 'downloadBackup'])->name('settings.backup.download');
+    Route::post('/settings/backup/restore', [\App\Http\Controllers\SettingsController::class, 'restoreBackup'])->name('settings.backup.restore');
+});
+
+// ===== Recipes & Production (Owner & Manager) =====
+Route::middleware(['auth', 'admin', \App\Http\Middleware\EnsureActive::class])->group(function () {
+    Route::get('/products/{product}/recipes', [\App\Http\Controllers\RecipeController::class, 'index'])->name('products.recipes');
+    Route::post('/products/{product}/produce', [\App\Http\Controllers\RecipeController::class, 'produce'])->name('products.produce');
+    Route::post('/products/{product}/recipes', [\App\Http\Controllers\RecipeController::class, 'storeVersion'])->name('products.recipes.store');
+    Route::put('/products/{product}/recipes/{version}', [\App\Http\Controllers\RecipeController::class, 'updateVersion'])->name('products.recipes.update');
+    Route::post('/products/{product}/recipes/{version}/activate', [\App\Http\Controllers\RecipeController::class, 'activate'])->name('products.recipes.activate');
+    Route::post('/products/{product}/recipes/{version}/archive', [\App\Http\Controllers\RecipeController::class, 'archive'])->name('products.recipes.archive');
+    Route::post('/products/{product}/recipes/{version}/restore', [\App\Http\Controllers\RecipeController::class, 'restore'])->name('products.recipes.restore');
+    Route::delete('/products/{product}/recipes/{version}', [\App\Http\Controllers\RecipeController::class, 'destroy'])->name('products.recipes.destroy');
+});
+
+// ===== Low Stock / Restock Report (Owner & Manager) =====
+Route::middleware(['auth', 'admin', \App\Http\Middleware\EnsureActive::class])->group(function () {
+    Route::get('/inventory-report/low-stock', [\App\Http\Controllers\InventoryController::class, 'lowStockReport'])->name('inventory.low-stock-report');
+});
+
+// ---- POS (counter sales) ----
+Route::middleware(['auth'])->group(function () {
+    Route::get('/pos', [\App\Http\Controllers\PosController::class, 'index'])->name('pos.index');
+    Route::post('/pos/sales', [\App\Http\Controllers\PosController::class, 'store'])->name('pos.sales.store');
+    Route::post('/pos/sales/{sale}/void', [\App\Http\Controllers\PosController::class, 'void'])->name('pos.sales.void');
+});
+// ---- Inventory FIFO valuation (cost data: Owner/Manager only) ----
+Route::middleware(['auth', 'admin'])->group(function () {
+    Route::get('/inventory-valuation', [\App\Http\Controllers\Inventory\ValuationController::class, 'index'])->name('inventory.valuation');
+});
+// ---- Reports: End of Day (Owner/Manager) ----
+Route::middleware(['auth', 'admin'])->group(function () {
+    Route::get('/reports/eod', [\App\Http\Controllers\Reports\EodController::class, 'index'])->name('reports.eod');
+    Route::post('/reports/eod/close', [\App\Http\Controllers\Reports\EodController::class, 'close'])->name('reports.eod.close');
+});
+// ---- Custom Order reference photo ----
+Route::middleware(['auth', 'admin'])->group(function () {
+    Route::get('/commissions/{commission}/photo', [\App\Http\Controllers\CommissionController::class, 'photo'])->name('commissions.photo');
+});
+// ---- Order receipt + shop/terms settings (Owner/Manager) ----
+Route::middleware(['auth', 'admin'])->group(function () {
+    Route::get('/commissions/{commission}/receipt', [\App\Http\Controllers\CommissionController::class, 'receipt'])->name('commissions.receipt');
+    Route::get('/settings/shop', [\App\Http\Controllers\ShopSettingsController::class, 'edit'])->name('settings.shop');
+    Route::post('/settings/shop', [\App\Http\Controllers\ShopSettingsController::class, 'update'])->name('settings.shop.update');
+});
+// Production Capacity (producible units from current stock + recipe)
+Route::get('inventory/capacity', [\App\Http\Controllers\ProductionCapacityController::class, 'index'])
+    ->middleware(['auth'])
+    ->name('inventory.capacity');
+
+// Production with audit (anti-tikas)
+Route::get('production', [\App\Http\Controllers\ProductionController::class, 'create'])->middleware(['auth'])->name('production.create');
+Route::post('production', [\App\Http\Controllers\ProductionController::class, 'store'])->middleware(['auth'])->name('production.store');
+Route::get('production/audit', [\App\Http\Controllers\ProductionController::class, 'audit'])->middleware(['auth'])->name('production.audit');
+
+

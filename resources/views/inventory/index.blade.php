@@ -82,13 +82,7 @@ tr.arch .item{color:var(--muted);}
         <div class="inv-alert err">{{ session('error') }}</div>
     @endif
 
-    <div class="seg">
-        <a href="{{ route('inventory.index', ['view' => 'active']) }}" class="{{ $view === 'active' ? 'on' : '' }}">Active <span class="count">{{ $activeCount }}</span></a>
-        <a href="{{ route('inventory.index', ['view' => 'archived']) }}" class="{{ $view === 'archived' ? 'on' : '' }}">
-            <svg viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M21 8v13H3V8M1 3h22v5H1zM10 12h4"/></svg>
-            Archived <span class="count">{{ $archivedCount }}</span>
-        </a>
-    </div>
+    @include('inventory._tabs', ['current' => $view])
 
     @if($view === 'active')
         <div class="inv-kpis" id="kpis">

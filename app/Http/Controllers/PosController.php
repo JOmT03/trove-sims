@@ -23,7 +23,7 @@ class PosController extends Controller
     {
         $products = Product::where('status', 'active')
             ->orderBy('product_name')
-            ->get(['id', 'product_name', 'category', 'price', 'stock_quantity']);
+            ->get(['id', 'product_name', 'category', 'price', 'stock_quantity', 'image_path']);
 
         $recent = Sale::with('cashier')
             ->orderByDesc('id')
@@ -129,7 +129,7 @@ class PosController extends Controller
         }
 
         return redirect()->route('pos.index')
-            ->with('success', 'Sale ' . $sale->sale_number . ' recorded â€” ' . number_format($sale->total, 2) . '.');
+            ->with('success', 'Sale ' . $sale->sale_number . ' recorded. Total: ' . number_format($sale->total, 2) . '.');
     }
 
     public function void(Request $request, Sale $sale)

@@ -1,0 +1,1208 @@
+===== app/Http/Controllers/ProductController.php =====
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\Product;
+use App\Models\Inventory;
+use App\Models\InventoryLog;
+use App\Models\Site;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
+
+class ProductController extends Controller
+{
+    public function index()
+    {
+        $products = Product::with('materials')->orderBy('created_at', 'desc')->get();
+        return view('products.index', compact('products'));
+    }
+
+    public function create()
+    {
+        $inventoryItems = Inventory::orderBy('item_name')->get();
+        $sites = Site::all();
+        return view('products.create', compact('inventoryItems', 'sites'));
+    }
+
+    public function store(Request $request)
+    {
+        try {
+            $validated = $request->validate([
+                'product_name'  => 'required|string|max:255|unique:products',
+                'description'   => 'nullable|string|max:1000',
+                'category'      => 'nullable|string|max:255',
+                'price'         => 'required|numeric|min:0',
+                'stock_quantity' => 'nullable|numeric|min:0',
+                'site_id'       => 'nullable|exists:sites,id',
+                'image'         => 'nullable|image|max:2048',
+                'recipe'        => 'nullable|array',
+                'recipe.*.inventory_id' => 'numeric|exists:inventory,id',
+                'recipe.*.quantity_needed' => 'numeric|min:0.01',
+            ]);
+
+            DB::beginTransaction();
+
+            $imagePath = null;
+            if ($request->hasFile('image')) {
+                $imagePath = $request->file('image')->store('products', 'public');
+            }
+
+            $qtyToMake = (float) ($validated['stock_quantity'] ?? 0);
+
+            $product = Product::create([
+                'product_name'   => $validated['product_name'],
+                'description'    => $validated['description'] ?? null,
+                'category'       => $validated['category'] ?? null,
+                'price'          => $validated['price'],
+                'stock_quantity' => $qtyToMake,
+                'site_id'        => $validated['site_id'] ?? null,
+                'status'         => 'active',
+                'image_path'     => $imagePath,
+            ]);
+
+            if (! empty($validated['recipe'])) {
+                $materials = [];
+                foreach ($validated['recipe'] as $recipe_item) {
+                    if (empty($recipe_item['inventory_id'])) continue;
+
+                    $inventory_id = $recipe_item['inventory_id'];
+                    $perUnit      = (float) $recipe_item['quantity_needed'];
+                    $inventory    = Inventory::findOrFail($inventory_id);
+
+                    // Deduct for the whole starting batch (recipe x quantity produced now)
+                    $totalNeeded = $perUnit * $qtyToMake;
+
+                    if ($totalNeeded > 0) {
+                        if ($inventory->quantity_on_hand < $totalNeeded) {
+                            throw new \Exception(
+                                "Insufficient {$inventory->item_name}. Available: {$inventory->quantity_on_hand}, Needed: {$totalNeeded}"
+                            );
+                        }
+
+                        $inventory->update([
+                            'quantity_on_hand' => $inventory->quantity_on_hand - $totalNeeded
+                        ]);
+
+                        InventoryLog::create([
+                            'inventory_id' => $inventory_id,
+                            'type'         => 'used',
+                            'quantity'     => $totalNeeded,
+                            'reference'    => 'PRODUCT-CREATE',
+                            'notes'        => "Produced {$qtyToMake} x {$product->product_name} on create",
+                            'user_id'      => auth()->id(),
+                        ]);
+                    }
+
+                    // Store the per-unit recipe (mirror for the active recipe / Recipes page)
+                    $materials[$inventory_id] = ['quantity_used' => $perUnit];
+                }
+
+                if (! empty($materials)) {
+                    $product->materials()->attach($materials);
+                }
+            }
+
+            DB::commit();
+
+            $msg = $qtyToMake > 0
+                ? "Product '{$product->product_name}' created and {$qtyToMake} pcs produced. Ingredients deducted from inventory."
+                : "Product '{$product->product_name}' created. You can produce a batch anytime from its Recipes page.";
+
+            return redirect()->route('products.index')->with('success', $msg);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            \Log::error('Product creation failed: ' . $e->getMessage());
+            return back()->withInput()
+                ->with('error', 'Failed to create product: ' . $e->getMessage());
+        }
+    }
+
+    public function show(Product $product)
+    {
+        $product->load('materials');
+        return view('products.show', compact('product'));
+    }
+
+    public function edit(Product $product)
+    {
+        $inventoryItems = Inventory::orderBy('item_name')->get();
+        $sites = Site::all();
+        $product->load('materials');
+        return view('products.edit', compact('product', 'inventoryItems', 'sites'));
+    }
+
+    public function update(Request $request, Product $product)
+    {
+        try {
+            $validated = $request->validate([
+                'product_name'  => 'required|string|max:255|unique:products,product_name,' . $product->id,
+                'description'   => 'nullable|string|max:1000',
+                'category'      => 'nullable|string|max:255',
+                'price'         => 'required|numeric|min:0',
+                'site_id'       => 'nullable|exists:sites,id',
+                'status'        => 'nullable|in:active,inactive',
+                'image'         => 'nullable|image|max:2048',
+            ]);
+
+            if ($request->hasFile('image')) {
+                if ($product->image_path && Storage::disk('public')->exists($product->image_path)) {
+                    Storage::disk('public')->delete($product->image_path);
+                }
+                $validated['image_path'] = $request->file('image')->store('products', 'public');
+            }
+
+            unset($validated['image']);
+            $product->update($validated);
+
+            return redirect()->route('products.index')
+                ->with('success', 'Product updated successfully.');
+        } catch (\Exception $e) {
+            \Log::error('Product update failed: ' . $e->getMessage());
+            return back()->withInput()
+                ->with('error', 'Failed to update product. Please try again.');
+        }
+    }
+
+    public function destroy(Product $product)
+    {
+        try {
+            if ($product->image_path && Storage::disk('public')->exists($product->image_path)) {
+                Storage::disk('public')->delete($product->image_path);
+            }
+            $product->delete();
+            return redirect()->route('products.index')
+                ->with('success', 'Product deleted successfully.');
+        } catch (\Exception $e) {
+            \Log::error('Product deletion failed: ' . $e->getMessage());
+            return back()->with('error', 'Failed to delete product. Please try again.');
+        }
+    }
+}
+
+===== resources/views/products/edit.blade.php =====
+<x-app-layout>
+<x-slot name="header">Edit Product</x-slot>
+<x-slot name="subheader">Update product details, photo &amp; materials</x-slot>
+
+<style>
+.card{background:#fff;border-radius:14px;box-shadow:0 1px 6px rgba(0,0,0,.07);padding:24px;margin-bottom:20px;}
+.card-title{font-size:15px;font-weight:800;color:#2E1C10;margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid #EDE0D0;}
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+label{display:block;font-size:13px;font-weight:700;color:#374151;margin-bottom:6px;}
+input,select{width:100%;padding:10px 13px;border:1.5px solid #e2e8f0;border-radius:9px;font-size:14px;background:#f8fafc;}
+input[type=file]{padding:8px;}
+table{width:100%;border-collapse:collapse;font-size:13px;}
+th{padding:9px 12px;text-align:left;font-size:11px;text-transform:uppercase;color:#8A7460;background:#FDF6EC;}
+td{padding:10px 12px;border-bottom:1px solid #f9fafb;}
+.btn{padding:10px 20px;border-radius:9px;font-size:13px;font-weight:700;border:none;cursor:pointer;text-decoration:none;}
+.btn-gold{background:#D9782C;color:#fff;} .btn-outline{background:#f3f4f6;color:#374151;border:1px solid #e5e7eb;}
+.alert-err{background:#FBE4DA;border:1px solid #fecaca;color:#991b1b;padding:12px 16px;border-radius:9px;margin-bottom:16px;font-size:13px;}
+.thumb{width:110px;height:110px;object-fit:cover;border-radius:10px;border:1px solid #EDE0D0;}
+.preview{margin-top:10px;width:110px;height:110px;border-radius:10px;object-fit:cover;border:1px solid #EDE0D0;display:none;}
+</style>
+
+<div style="max-width: 900px; margin: 0 auto;">
+@if ($errors->any())
+    <div class="alert-err"><strong>Errors:</strong><ul style="margin:8px 0 0;padding-left:20px;">@foreach ($errors->all() as $error)<li>{{ $error }}</li>@endforeach</ul></div>
+@endif
+
+<form method="POST" action="{{ route('products.update', $product) }}" enctype="multipart/form-data">
+@csrf
+@method('PUT')
+
+<div class="card">
+    <div class="card-title">Product Details</div>
+    <div class="form-grid">
+        <div style="grid-column:1/-1;">
+            <label>Product Name <span style="color:red">*</span></label>
+            <input type="text" name="product_name" value="{{ old('product_name', $product->product_name) }}" required>
+        </div>
+        <div style="grid-column:1/-1;">
+            <label>Description</label>
+            <textarea name="description" rows="2" style="width:100%;padding:10px 13px;border:1.5px solid #e2e8f0;border-radius:9px;font-size:14px;background:#f8fafc;font-family:inherit;resize:vertical;" placeholder="Short description shown on the product card...">{{ old('description', $product->description) }}</textarea>
+        </div>
+        <div>
+            <label>Category</label>
+            <select name="category">
+                <option value="">- Select -</option>
+                <option value="Cake" {{ old('category', $product->category) === 'Cake' ? 'selected' : '' }}>Cake</option>
+                <option value="Pastry" {{ old('category', $product->category) === 'Pastry' ? 'selected' : '' }}>Pastry</option>
+                <option value="Coffee" {{ old('category', $product->category) === 'Coffee' ? 'selected' : '' }}>Coffee</option>
+            </select>
+        </div>
+        <div>
+            <label>Price (&#8369;) <span style="color:red">*</span></label>
+            <input type="number" name="price" step="0.01" min="0" value="{{ old('price', $product->price) }}" required>
+        </div>
+        <div>
+            <label>Status</label>
+            <select name="status">
+                <option value="active" {{ old('status', $product->status) === 'active' ? 'selected' : '' }}>Active</option>
+                <option value="inactive" {{ old('status', $product->status) === 'inactive' ? 'selected' : '' }}>Inactive</option>
+            </select>
+        </div>
+        <div>
+            <label>Site</label>
+            <select name="site_id">
+                <option value="">- Unassigned -</option>
+                @foreach($sites as $site)
+                    <option value="{{ $site->id }}" {{ old('site_id', $product->site_id) == $site->id ? 'selected' : '' }}>{{ $site->site_name }}</option>
+                @endforeach
+            </select>
+        </div>
+        <div style="grid-column:1/-1;">
+            <label>Product Photo</label>
+            <div style="display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap;">
+                <div>
+                    <div style="font-size:11px;color:#8A7460;margin-bottom:5px;">Current</div>
+                    @if($product->image_path)
+                        <img src="{{ asset('storage/'.$product->image_path) }}" class="thumb" alt="current">
+                    @else
+                        <div class="thumb" style="background:#FDF6EC;display:flex;align-items:center;justify-content:center;color:#C9B9A6;font-size:12px;">None</div>
+                    @endif
+                </div>
+                <div style="flex:1;min-width:200px;">
+                    <div style="font-size:11px;color:#8A7460;margin-bottom:5px;">Upload new (replaces current)</div>
+                    <input type="file" name="image" accept="image/*" onchange="previewImg(this)">
+                    <img id="preview" class="preview" alt="preview">
+                    <p style="font-size:11px;color:#8A7460;margin-top:6px;">JPG or PNG, up to 2MB. Leave empty to keep current.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-title">Materials Used in This Product</div>
+    @if ($product->materials && $product->materials->count())
+        <table>
+            <thead><tr><th>Material</th><th>Quantity Used (per unit)</th><th>Unit</th></tr></thead>
+            <tbody>
+                @foreach ($product->materials as $material)
+                    <tr><td>{{ $material->item_name }}</td><td>{{ number_format($material->pivot->quantity_used, 2) }}</td><td>{{ $material->unit }}</td></tr>
+                @endforeach
+            </tbody>
+        </table>
+    @else
+        <p style="color:#8A7460;margin:0;">No materials defined for this product.</p>
+    @endif
+</div>
+
+<div style="display:flex;gap:12px;justify-content:flex-end;">
+    <a href="{{ route('products.index') }}" class="btn btn-outline">Cancel</a>
+    <button type="submit" class="btn btn-gold">Save Changes</button>
+</div>
+</form>
+</div>
+
+<script>
+function previewImg(input){
+    const img = document.getElementById('preview');
+    if(input.files && input.files[0]){ img.src = URL.createObjectURL(input.files[0]); img.style.display='block'; }
+    else { img.style.display='none'; }
+}
+</script>
+</x-app-layout>
+
+===== resources/views/products/create.blade.php =====
+<x-app-layout>
+<x-slot name="header">Add Product</x-slot>
+<x-slot name="subheader">Create a product, set its recipe, and produce the first batch</x-slot>
+
+<style>
+.ap-layout{display:grid;grid-template-columns:260px 1fr;gap:18px;align-items:start;}
+.ap-side{position:sticky;top:12px;}
+.side-card{background:#fff;border-radius:14px;box-shadow:0 1px 6px rgba(0,0,0,.07);padding:16px 16px 14px;}
+.side-head{width:100%;display:flex;align-items:center;justify-content:space-between;background:none;border:none;cursor:pointer;font-family:inherit;font-size:14px;font-weight:800;color:#2E1C10;padding:0 0 10px;}
+.chev{transition:transform .15s;color:#8A7460;}
+.chev.closed{transform:rotate(-90deg);}
+.inv-list{display:flex;flex-direction:column;gap:11px;border-top:1px solid #EDE0D0;padding-top:12px;}
+.inv-list.hide{display:none;}
+.inv-row{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:13px;}
+.inv-n{color:#2E1C10;font-weight:600;}
+.inv-q{color:#8A7460;font-weight:700;white-space:nowrap;}
+.inv-empty{font-size:12.5px;color:#8A7460;}
+.inv-note{margin-top:12px;font-size:11.5px;color:#15803D;}
+.card{background:#fff;border-radius:14px;box-shadow:0 1px 6px rgba(0,0,0,.07);padding:22px 24px;margin-bottom:18px;}
+.card-title{font-size:15px;font-weight:800;color:#2E1C10;margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid #EDE0D0;}
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+label{display:block;font-size:13px;font-weight:700;color:#374151;margin-bottom:6px;}
+input,select,textarea{width:100%;padding:10px 13px;border:1.5px solid #e2e8f0;border-radius:9px;font-size:14px;background:#f8fafc;font-family:inherit;}
+input:focus,select:focus,textarea:focus{outline:none;border-color:#D9782C;background:#fff;}
+input[type=file]{padding:8px;}
+table{width:100%;border-collapse:collapse;font-size:13px;}
+th{padding:9px 12px;text-align:left;font-size:11px;text-transform:uppercase;color:#8A7460;background:#FDF6EC;}
+td{padding:10px 12px;border-bottom:1px solid #f3f4f6;}
+.add-row-btn{padding:8px 14px;border:1.5px dashed #EDE0D0;border-radius:9px;background:#FDF6EC;color:#8A7460;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;}
+.hint{font-size:12px;color:#8A7460;}
+.canmake{margin-top:16px;border-radius:10px;padding:13px 16px;font-size:13.5px;}
+.canmake.ok{background:#FDF6EC;border:1px solid #EDE0D0;color:#4A2C17;}
+.canmake.zero{background:#FBE0E0;border:1px solid #fecaca;color:#991B1B;}
+.canmake.none{background:#F3F4F6;border:1px solid #e5e7eb;color:#6b7280;}
+.canmake .big{font-size:21px;font-weight:800;color:#B5651D;}
+.startbox{margin-top:16px;border-top:1px dashed #EDE0D0;padding-top:16px;max-width:300px;}
+.warn{font-size:12px;color:#C2410C;margin-top:6px;display:none;}
+.btn{padding:11px 22px;border-radius:9px;font-size:13.5px;font-weight:700;border:none;cursor:pointer;text-decoration:none;}
+.btn-gold{background:#D9782C;color:#fff;}
+.btn-outline{background:#f3f4f6;color:#374151;border:1px solid #e5e7eb;}
+.preview{margin-top:10px;width:110px;height:110px;border-radius:10px;object-fit:cover;border:1px solid #EDE0D0;display:none;}
+@media (max-width:820px){.ap-layout{grid-template-columns:1fr;}.ap-side{position:static;}}
+</style>
+
+@php
+    $invData = $inventoryItems->map(function ($i) {
+        return ['id' => $i->id, 'name' => $i->item_name, 'unit' => $i->unit, 'on' => (float) $i->quantity_on_hand];
+    });
+@endphp
+
+@if($errors->any())
+<div style="background:#FBE4DA;border:1px solid #fecaca;color:#991b1b;padding:12px 16px;border-radius:9px;margin-bottom:16px;font-size:13px;">
+<strong>Please fix:</strong><ul style="margin:6px 0 0 18px;">@foreach($errors->all() as $e)<li>{{ $e }}</li>@endforeach</ul></div>
+@endif
+
+<div class="ap-layout">
+  <aside class="ap-side">
+    <div class="side-card">
+      <button type="button" class="side-head" onclick="toggleInv()">
+        <span>Ingredient Stock</span><span id="invchev" class="chev">&#9662;</span>
+      </button>
+      <div id="invlist" class="inv-list">
+        @forelse($inventoryItems as $it)
+          <div class="inv-row"><span class="inv-n">{{ $it->item_name }}</span><span class="inv-q">{{ rtrim(rtrim(number_format($it->quantity_on_hand,2),'0'),'.') }} {{ $it->unit }}</span></div>
+        @empty
+          <div class="inv-empty">No inventory items yet.</div>
+        @endforelse
+      </div>
+      <div class="inv-note">&#10003; Deducts automatically when you produce.</div>
+    </div>
+  </aside>
+
+  <form method="POST" action="{{ route('products.store') }}" enctype="multipart/form-data" class="ap-main">
+    @csrf
+
+    <div class="card">
+      <div class="card-title">Product Details</div>
+      <div class="form-grid">
+        <div style="grid-column:1/-1;">
+          <label>Product Name <span style="color:red">*</span></label>
+          <input type="text" name="product_name" value="{{ old('product_name') }}" placeholder="e.g. Banana Cake" required>
+        </div>
+        <div style="grid-column:1/-1;">
+          <label>Description</label>
+          <textarea name="description" rows="2" style="resize:vertical;" placeholder="Short description shown on the product card...">{{ old('description') }}</textarea>
+        </div>
+        <div>
+          <label>Category <span style="color:red">*</span></label>
+          <select name="category" required>
+            <option value="">- Select -</option>
+            <option value="Cake">Cake</option>
+            <option value="Pastry">Pastry</option>
+            <option value="Coffee">Coffee</option>
+          </select>
+        </div>
+        <div>
+          <label>Price (&#8369;) <span style="color:red">*</span></label>
+          <input type="number" name="price" step="0.01" min="0" value="{{ old('price') }}" required>
+        </div>
+        <div style="grid-column:1/-1;">
+          <label>Product Photo</label>
+          <input type="file" name="image" accept="image/*" onchange="previewImg(this)">
+          <img id="preview" class="preview" alt="preview">
+          <p style="font-size:11px;color:#8A7460;margin-top:6px;">Optional. JPG or PNG, up to 2MB.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+        <div class="card-title" style="margin:0;padding:0;border:none;">Recipe (Raw Materials Needed)</div>
+        <button type="button" class="add-row-btn" onclick="addRow()">+ Add Ingredient</button>
+      </div>
+      <p class="hint" style="margin-bottom:12px;">Define how much of each inventory item is needed to make <strong>one unit</strong>. This enables automatic stock deduction and the can-make estimate below.</p>
+      <table>
+        <thead><tr><th style="width:52%">Inventory Item</th><th>Qty Needed (per unit)</th><th></th></tr></thead>
+        <tbody id="recipeBody"></tbody>
+      </table>
+
+      <div id="canmake" class="canmake none">Add at least one ingredient to see how many you can make.</div>
+
+      <div class="startbox">
+        <label>Starting Finished Stock (produce now)</label>
+        <input type="number" id="stockq" name="stock_quantity" min="0" value="{{ old('stock_quantity', 0) }}" oninput="recalc()">
+        <div class="warn" id="warn"></div>
+        <p class="hint" style="margin:6px 0 0;">How many pcs to make right now. This deducts the recipe from inventory. Max possible is shown above. Leave 0 to produce later.</p>
+      </div>
+    </div>
+
+    <div style="display:flex;gap:12px;justify-content:flex-end;">
+      <a href="{{ route('products.index') }}" class="btn btn-outline">Cancel</a>
+      <button type="submit" class="btn btn-gold">Save Product</button>
+    </div>
+  </form>
+</div>
+
+<script>
+const inventoryItems = {!! $invData->toJson() !!};
+let rowIndex = 0;
+
+function previewImg(input){
+    const img = document.getElementById('preview');
+    if(input.files && input.files[0]){ img.src = URL.createObjectURL(input.files[0]); img.style.display='block'; }
+    else { img.style.display='none'; }
+}
+function itemOptions(){
+    return inventoryItems.map(function(i){ return '<option value="'+i.id+'">'+i.name+' ('+i.unit+')</option>'; }).join('');
+}
+function invById(id){ return inventoryItems.find(function(i){ return String(i.id)===String(id); }); }
+
+function addRow(){
+    const i = rowIndex++;
+    const tr = document.createElement('tr');
+    tr.id = 'recipe_row_'+i;
+    tr.innerHTML =
+        '<td><select name="recipe['+i+'][inventory_id]" onchange="recalc()" required><option value="">- Select item -</option>'+itemOptions()+'</select></td>' +
+        '<td><input type="number" name="recipe['+i+'][quantity_needed]" step="0.01" min="0.01" oninput="recalc()" required></td>' +
+        '<td><button type="button" onclick="document.getElementById(\'recipe_row_'+i+'\').remove();recalc();" style="background:none;border:none;color:#ef4444;cursor:pointer;font-size:16px;">&times;</button></td>';
+    document.getElementById('recipeBody').appendChild(tr);
+    recalc();
+}
+
+function recalc(){
+    const rows = document.querySelectorAll('#recipeBody tr');
+    const box = document.getElementById('canmake');
+    const warn = document.getElementById('warn');
+    let valid = 0, maxMake = Infinity;
+    rows.forEach(function(r){
+        const sel = r.querySelector('select');
+        const inp = r.querySelector('input');
+        const id = sel ? sel.value : '';
+        const qty = inp ? parseFloat(inp.value) : NaN;
+        if(id && qty > 0){ const it = invById(id); if(it){ valid++; maxMake = Math.min(maxMake, Math.floor(it.on / qty)); } }
+    });
+    warn.style.display = 'none';
+    if(valid === 0){ box.className='canmake none'; box.innerHTML='Add at least one ingredient to see how many you can make.'; return; }
+    if(maxMake <= 0){ box.className='canmake zero'; box.innerHTML='&#9888; Not enough stock to make even 1 unit with this recipe. Restock first.'; }
+    else { box.className='canmake ok'; box.innerHTML='With current stock, you can make up to <span class="big">'+maxMake.toLocaleString('en-PH')+'</span> pcs of this product.'; }
+    const sq = document.getElementById('stockq');
+    const start = sq ? (parseFloat(sq.value) || 0) : 0;
+    if(maxMake !== Infinity && start > maxMake){
+        warn.style.display='block';
+        warn.innerHTML='&#9888; You only have enough stock for '+maxMake.toLocaleString('en-PH')+' pcs. Lower the amount or restock first.';
+    }
+}
+function toggleInv(){
+    document.getElementById('invlist').classList.toggle('hide');
+    document.getElementById('invchev').classList.toggle('closed');
+}
+addRow();
+</script>
+</x-app-layout>
+
+===== resources/views/products/index.blade.php =====
+<x-app-layout>
+<x-slot name="header">Products</x-slot>
+<x-slot name="subheader">Trove menu - grouped by category</x-slot>
+
+<style>
+.p-wrap{max-width:1040px;margin:0 auto;}
+.p-toolbar{display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap;}
+.p-search{flex:1;min-width:200px;position:relative;}
+.p-search svg{position:absolute;left:14px;top:50%;transform:translateY(-50%);width:17px;height:17px;stroke:var(--muted);}
+.p-search input{width:100%;padding:11px 14px 11px 40px;border:1px solid var(--border);border-radius:999px;font-size:14px;background:var(--white);color:var(--text);font-family:var(--f-body);}
+.p-search input:focus{outline:none;border-color:var(--gold);box-shadow:0 0 0 3px rgba(217,120,44,.14);}
+.filter-wrap{position:relative;}
+.filter-btn{display:inline-flex;align-items:center;gap:0;background:var(--gold);color:#fff;border:none;border-radius:999px;padding:11px 18px;font-size:13.5px;font-weight:700;cursor:pointer;font-family:var(--f-body);}
+.filter-btn svg{width:15px;height:15px;stroke:#fff;}
+.filter-menu{position:absolute;top:48px;right:0;background:var(--white);border:1px solid var(--border);border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,.16);overflow:hidden;z-index:6;min-width:160px;}
+.filter-menu button{display:block;width:100%;text-align:left;padding:10px 16px;font-size:13px;font-weight:600;color:var(--text);background:none;border:none;cursor:pointer;font-family:var(--f-body);}
+.filter-menu button:hover{background:#FDF6EC;}
+.filter-menu button.active{color:var(--gold);}
+.newbtn{background:var(--navy,#4A2C17);color:#fff;border:none;border-radius:999px;padding:11px 18px;font-weight:700;font-size:13.5px;cursor:pointer;text-decoration:none;white-space:nowrap;}
+.chips{display:flex;gap:9px;flex-wrap:wrap;margin-bottom:6px;}
+.chip{border:1px solid var(--border);background:var(--white);color:var(--muted);border-radius:999px;padding:8px 18px;font-size:13px;font-weight:600;cursor:pointer;font-family:var(--f-body);}
+.chip.active{background:var(--gold);color:#fff;border-color:var(--gold);}
+.alert-ok{background:#E7F3EA;border:1px solid #bbf7d0;color:#166534;padding:12px 16px;border-radius:9px;margin-bottom:16px;font-size:13px;}
+.alert-err{background:#FBE4DA;border:1px solid #fecaca;color:#991b1b;padding:12px 16px;border-radius:9px;margin-bottom:16px;font-size:13px;}
+
+.cat-sec{margin-top:24px;}
+.cat-sec[hidden]{display:none!important;}
+.cat-head{display:flex;align-items:center;gap:12px;margin-bottom:14px;}
+.cat-head h2{font-family:var(--f-display);font-weight:800;font-size:17px;color:#4A2C17;margin:0;white-space:nowrap;}
+.cat-head .count{font-size:11px;font-weight:700;color:#B5651D;background:#F3DCC4;padding:3px 10px;border-radius:999px;}
+.cat-head .line{flex:1;height:1px;background:var(--border);}
+
+.p-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:16px;}
+.p-card{background:var(--white);border:1px solid var(--border);border-radius:16px;box-shadow:0 1px 2px rgba(74,44,23,.05),0 8px 22px rgba(74,44,23,.06);display:flex;flex-direction:column;position:relative;}
+.p-card[hidden]{display:none!important;}
+.p-photo{height:150px;display:flex;align-items:center;justify-content:center;position:relative;border-radius:16px 16px 0 0;background:linear-gradient(135deg,#F3DCC4,#E8C07A);overflow:hidden;}
+.p-photo img{width:100%;height:100%;object-fit:cover;display:block;}
+.ph-emoji{font-size:44px;}
+.st{position:absolute;top:10px;left:10px;font-size:10px;font-weight:700;padding:3px 9px;border-radius:999px;background:rgba(255,255,255,.92);color:#15803D;z-index:2;}
+.st.low{color:#B45309;} .st.out{color:#C2410C;}
+.kebab{position:absolute;top:9px;right:9px;width:30px;height:30px;border-radius:9px;border:none;background:rgba(255,255,255,.92);color:#4A2C17;font-size:18px;line-height:1;cursor:pointer;display:grid;place-items:center;box-shadow:0 1px 4px rgba(0,0,0,.12);z-index:3;}
+.kebab:hover{background:#fff;}
+.menu{position:absolute;top:42px;right:9px;background:var(--white);border:1px solid var(--border);border-radius:11px;box-shadow:0 8px 24px rgba(0,0,0,.16);overflow:hidden;z-index:5;min-width:130px;}
+.menu a{display:block;padding:10px 14px;font-size:13px;font-weight:600;color:var(--text);text-decoration:none;cursor:pointer;}
+.menu a:hover{background:#FDF6EC;}
+.menu a.del{color:#C2410C;border-top:1px solid var(--border);}
+.p-body{padding:14px 15px 16px;display:flex;flex-direction:column;gap:6px;flex:1;}
+.p-row1{display:flex;align-items:baseline;justify-content:space-between;gap:8px;}
+.p-nm{font-family:var(--f-display);font-weight:700;font-size:15.5px;letter-spacing:-.2px;min-width:0;}
+.p-price{font-family:var(--f-display);font-weight:800;font-size:15.5px;color:var(--gold);white-space:nowrap;font-variant-numeric:tabular-nums;}
+.p-desc{font-size:12px;color:var(--muted);line-height:1.45;min-height:34px;}
+.p-meta{display:flex;align-items:center;gap:8px;font-size:11.5px;color:var(--muted);margin-top:2px;}
+.p-cat{background:#FDF6EC;border:1px solid var(--border);padding:2px 9px;border-radius:999px;font-weight:600;}
+.empty{background:#FDF6EC;border:1px solid var(--border);border-radius:14px;padding:50px 20px;text-align:center;color:var(--muted);}
+.noresult{display:none;text-align:center;color:var(--muted);padding:40px 20px;font-size:14px;}
+</style>
+
+@php
+  $cats = $products->pluck('category')->map(fn($c)=> $c ?: 'Uncategorized')->unique()->values();
+  $grouped = $products->groupBy(fn($p)=> $p->category ?: 'Uncategorized');
+@endphp
+
+<div class="p-wrap">
+    @if(session('success'))<div class="alert-ok">{{ session('success') }}</div>@endif
+    @if(session('error'))<div class="alert-err">{{ session('error') }}</div>@endif
+
+    <div class="p-toolbar">
+        <div class="p-search">
+            <svg fill="none" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-4.35-4.35M17 11a6 6 0 11-12 0 6 6 0 0112 0z"/></svg>
+            <input type="text" id="search" placeholder="Search products..." oninput="applyFilters()">
+        </div>
+        <div class="filter-wrap">
+            <button class="filter-btn" onclick="toggleFilter(event)" title="Filter" aria-label="Filter">
+                <svg fill="none" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 4h18M6 12h12M10 20h4"/></svg>
+            </button>
+            <div class="filter-menu" id="filterMenu" hidden>
+                <button data-status="all" class="active" onclick="setStatus(this)">All stock</button>
+                <button data-status="in" onclick="setStatus(this)">In stock</button>
+                <button data-status="low" onclick="setStatus(this)">Low / Out of stock</button>
+            </div>
+        </div>
+        @can('admin')<a href="{{ route('products.create') }}" class="newbtn">+ New Product</a>@endcan
+    </div>
+
+    <div class="chips" id="chips">
+        <button class="chip active" data-cat="all" onclick="setCat(this)">All</button>
+        @foreach($cats as $c)<button class="chip" data-cat="{{ $c }}" onclick="setCat(this)">{{ $c }}</button>@endforeach
+    </div>
+
+    @if($products && $products->count())
+    <div id="sections">
+      @foreach($grouped as $catName => $items)
+        <div class="cat-sec" data-cat="{{ $catName }}">
+          <div class="cat-head"><h2>{{ $catName }}</h2><span class="count">{{ $items->count() }}</span><span class="line"></span></div>
+          <div class="p-grid">
+            @foreach($items as $product)
+            @php
+                $sq = (int) $product->stock_quantity;
+                $state = $sq <= 0 ? 'out' : ($sq <= 5 ? 'low' : 'in');
+            @endphp
+            <div class="p-card" data-cat="{{ $catName }}" data-name="{{ strtolower($product->product_name) }}" data-state="{{ $state }}">
+                <div class="p-photo">
+                    @if($product->image_path)
+                        <img src="{{ asset('storage/'.$product->image_path) }}" alt="{{ $product->product_name }}">
+                    @else
+                        <span class="ph-emoji">&#127856;</span>
+                    @endif
+                    <span class="st {{ $state==='out' ? 'out' : ($state==='low' ? 'low' : '') }}">{{ $sq<=0 ? 'Out of stock' : $sq.' in stock' }}</span>
+                    <button class="kebab" aria-label="Menu" onclick="toggleMenu(event,this)">&#8942;</button>
+                    <div class="menu" hidden>
+                        <a href="{{ route('products.show', $product) }}">View</a>
+                        @can('admin')<a href="{{ route('products.recipes', $product) }}">Recipes</a>@endcan
+                        @can('admin')
+                            <a href="{{ route('products.edit', $product) }}">Edit</a>
+                            <a class="del" onclick="if(confirm('Delete this product?')){document.getElementById('del{{ $product->id }}').submit();}return false;">Delete</a>
+                            <form id="del{{ $product->id }}" method="POST" action="{{ route('products.destroy', $product) }}" style="display:none;">@csrf @method('DELETE')</form>
+                        @endcan
+                    </div>
+                </div>
+                <div class="p-body">
+                    <div class="p-row1"><span class="p-nm">{{ $product->product_name }}</span><span class="p-price">&#8369;{{ number_format($product->price, 2) }}</span></div>
+                    <div class="p-desc">{{ $product->description ?: 'No description yet.' }}</div>
+                    <div class="p-meta"><span class="p-cat">{{ $product->category ?: 'Uncategorized' }}</span><span>&middot; {{ $sq }} pcs on hand</span></div>
+                </div>
+            </div>
+            @endforeach
+          </div>
+        </div>
+      @endforeach
+    </div>
+    <div class="noresult" id="noresult">No products match your search.</div>
+    @else
+    <div class="empty">
+        <p style="margin-bottom:16px;">No products yet.</p>
+        @can('admin')<a href="{{ route('products.create') }}" class="newbtn">+ Create First Product</a>@endcan
+    </div>
+    @endif
+</div>
+
+<script>
+var curCat = 'all', curStatus = 'all';
+
+function setCat(btn){
+    document.querySelectorAll('#chips .chip').forEach(function(c){ c.classList.remove('active'); });
+    btn.classList.add('active'); curCat = btn.getAttribute('data-cat'); applyFilters();
+}
+function setStatus(btn){
+    document.querySelectorAll('#filterMenu button').forEach(function(b){ b.classList.remove('active'); });
+    btn.classList.add('active'); curStatus = btn.getAttribute('data-status');
+    document.getElementById('filterMenu').hidden = true; applyFilters();
+}
+function applyFilters(){
+    var term = (document.getElementById('search').value || '').toLowerCase().trim();
+    var total = 0;
+    document.querySelectorAll('.cat-sec').forEach(function(sec){
+        var catOk = curCat === 'all' || sec.getAttribute('data-cat') === curCat;
+        var shown = 0;
+        sec.querySelectorAll('.p-card').forEach(function(c){
+            var okName = c.getAttribute('data-name').indexOf(term) !== -1;
+            var state  = c.getAttribute('data-state');
+            var okStat = curStatus === 'all' || (curStatus === 'in' && state === 'in') || (curStatus === 'low' && (state === 'low' || state === 'out'));
+            var show = catOk && okName && okStat;
+            c.hidden = !show; if(show){ shown++; total++; }
+        });
+        sec.hidden = shown === 0;
+    });
+    var nr = document.getElementById('noresult'); if(nr) nr.style.display = total === 0 ? 'block' : 'none';
+}
+
+function closeAllMenus(){ document.querySelectorAll('.menu').forEach(function(m){ m.hidden = true; }); }
+function toggleMenu(e, btn){ e.stopPropagation(); var m = btn.nextElementSibling; var willOpen = m.hidden; closeAllMenus(); m.hidden = !willOpen; }
+function toggleFilter(e){ e.stopPropagation(); var fm = document.getElementById('filterMenu'); fm.hidden = !fm.hidden; }
+document.addEventListener('click', function(){ closeAllMenus(); var fm=document.getElementById('filterMenu'); if(fm) fm.hidden = true; });
+</script>
+</x-app-layout>
+
+===== app/Http/Controllers/PosController.php =====
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\Product;
+use App\Models\Sale;
+use App\Models\SalePayment;
+use App\Models\DayClosure;
+use App\Models\Site;
+use App\Models\FinancialAuditLog;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+
+/**
+ * POS â€” counter sale of FINISHED products (walk-in).
+ * Deducts finished stock (Product.stock_quantity) only. Raw materials are NOT
+ * touched here: they were already consumed when the product was produced.
+ * A sale is a ledger entry â€” it is voided (with a reason), never deleted.
+ */
+class PosController extends Controller
+{
+    public function index()
+    {
+        $products = Product::where('status', 'active')
+            ->orderBy('product_name')
+            ->get(['id', 'product_name', 'category', 'price', 'stock_quantity']);
+
+        $recent = Sale::with('cashier')
+            ->orderByDesc('id')
+            ->limit(8)
+            ->get();
+
+        return view('pos.index', compact('products', 'recent'));
+    }
+
+    public function store(Request $request)
+    {
+        $data = $request->validate([
+            'items'                => 'required|array|min:1',
+            'items.*.product_id'   => 'required|exists:products,id',
+            'items.*.quantity'     => 'required|integer|min:1',
+            'payments'             => 'required|array|min:1',
+            'payments.*.method'    => 'required|in:' . implode(',', SalePayment::METHODS),
+            'payments.*.amount'    => 'required|numeric|min:0.01',
+            'payments.*.reference' => 'nullable|string|max:100',
+        ]);
+
+        // Digital payments must carry a reference number.
+        foreach ($data['payments'] as $p) {
+            if ($p['method'] !== 'cash' && blank($p['reference'] ?? null)) {
+                return back()->withInput()
+                    ->with('error', 'A reference number is required for ' . strtoupper($p['method']) . ' payments.');
+            }
+        }
+
+        try {
+            $sale = DB::transaction(function () use ($data) {
+                // Lock the products we are about to sell so two cashiers cannot
+                // oversell the same stock at the same time.
+                $ids = collect($data['items'])->pluck('product_id')->all();
+                $products = Product::whereIn('id', $ids)->lockForUpdate()->get()->keyBy('id');
+
+                $total = 0;
+                $lines = [];
+                foreach ($data['items'] as $row) {
+                    $product = $products[$row['product_id']];
+                    $qty = (int) $row['quantity'];
+                    if ((float) $product->stock_quantity < $qty) {
+                        throw new \RuntimeException(
+                            "Not enough stock for {$product->product_name} (have {$product->stock_quantity}, need {$qty})."
+                        );
+                    }
+                    $lineTotal = round((float) $product->price * $qty, 2);
+                    $total += $lineTotal;
+                    $lines[] = [$product, $qty, $lineTotal];
+                }
+
+                $paid = round(collect($data['payments'])->sum(fn ($p) => (float) $p['amount']), 2);
+                if ($paid + 0.009 < $total) {
+                    throw new \RuntimeException(
+                        'Payments (' . number_format($paid, 2) . ') are less than the total (' . number_format($total, 2) . ').'
+                    );
+                }
+
+                $siteId = auth()->user()->site_id ?? Site::query()->value('id');
+
+                $sale = Sale::create([
+                    'sale_number'  => 'S-' . now()->format('ymd') . '-' . strtoupper(substr(uniqid(), -5)),
+                    'site_id'      => $siteId,
+                    'cashier_id'   => auth()->id(),
+                    'total'        => $total,
+                    'status'       => 'completed',
+                    'completed_at' => now(),
+                ]);
+
+                foreach ($lines as [$product, $qty, $lineTotal]) {
+                    $sale->items()->create([
+                        'product_id'   => $product->id,
+                        'product_name' => $product->product_name,
+                        'quantity'     => $qty,
+                        'unit_price'   => $product->price,
+                        'line_total'   => $lineTotal,
+                    ]);
+                    $product->decrement('stock_quantity', $qty); // finished stock only
+                }
+
+                foreach ($data['payments'] as $p) {
+                    if ((float) $p['amount'] <= 0) {
+                        continue;
+                    }
+                    $sale->payments()->create([
+                        'method'    => $p['method'],
+                        'amount'    => round((float) $p['amount'], 2),
+                        'reference' => $p['method'] === 'cash' ? null : ($p['reference'] ?? null),
+                    ]);
+                }
+
+                FinancialAuditLog::record('sale.recorded', $sale, [
+                    'total'    => (string) $sale->total,
+                    'items'    => count($lines),
+                    'payments' => collect($data['payments'])
+                        ->map(fn ($p) => $p['method'] . ':' . $p['amount'])->implode(', '),
+                ]);
+
+                return $sale;
+            });
+        } catch (\Throwable $e) {
+            return back()->withInput()->with('error', $e->getMessage());
+        }
+
+        return redirect()->route('pos.index')
+            ->with('success', 'Sale ' . $sale->sale_number . ' recorded. Total: ' . number_format($sale->total, 2) . '.');
+    }
+
+    public function void(Request $request, Sale $sale)
+    {
+        $data = $request->validate(['reason' => 'required|string|max:255']);
+
+        if ($sale->isVoided()) {
+            return back()->with('error', 'That sale is already voided.');
+        }
+        if (DayClosure::isClosed($sale->completed_at)) {
+            return back()->with('error', 'That sale falls on a day that is already closed. It can no longer be voided.');
+        }
+
+        DB::transaction(function () use ($sale, $data) {
+            foreach ($sale->items as $item) {
+                if ($item->product_id) {
+                    $product = Product::where('id', $item->product_id)->lockForUpdate()->first();
+                    $product?->increment('stock_quantity', $item->quantity); // put the stock back
+                }
+            }
+
+            $sale->update([
+                'status'      => 'voided',
+                'voided_at'   => now(),
+                'voided_by'   => auth()->id(),
+                'void_reason' => $data['reason'],
+            ]);
+
+            FinancialAuditLog::record('sale.voided', $sale, [
+                'reason' => $data['reason'],
+                'total'  => (string) $sale->total,
+            ]);
+        });
+
+        return back()->with('success', 'Sale ' . $sale->sale_number . ' voided and stock restored.');
+    }
+}
+
+===== resources/views/pos/index.blade.php =====
+<x-app-layout>
+<x-slot name="header">POS</x-slot>
+<x-slot name="subheader">Counter sale &mdash; walk-in</x-slot>
+
+@php
+    $cats = $products->pluck("category")->filter()->unique()->sort()->values();
+@endphp
+
+<style>
+.pos-wrap{display:grid;grid-template-columns:1fr 380px;gap:18px;align-items:start;}
+@media(max-width:1000px){.pos-wrap{grid-template-columns:1fr;}}
+.pos-alert{padding:12px 16px;border-radius:9px;margin-bottom:14px;font-size:13px;}
+.pos-alert.ok{background:#E7F3EA;border:1px solid #bbf7d0;color:#166534;}
+.pos-alert.err{background:#FBE4DA;border:1px solid #fecaca;color:#991b1b;}
+.pos-bar{display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap;}
+.pos-search{flex:1;min-width:180px;position:relative;}
+.pos-search svg{position:absolute;left:14px;top:50%;transform:translateY(-50%);width:17px;height:17px;stroke:var(--muted);fill:none;}
+.pos-search input{width:100%;padding:11px 14px 11px 40px;border:1px solid var(--border);border-radius:999px;font-size:14px;background:var(--white);color:var(--text);font-family:var(--f-body);}
+.pos-search input:focus{outline:none;border-color:var(--gold);box-shadow:0 0 0 3px rgba(217,120,44,.14);}
+.pos-cat{padding:10px 14px;border:1px solid var(--border);border-radius:999px;font-size:13px;background:var(--white);color:var(--text);font-family:var(--f-body);cursor:pointer;}
+.pos-cat:focus{outline:none;border-color:var(--gold);}
+.pos-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;}
+.pcard{background:var(--white);border:1px solid var(--border);border-radius:14px;padding:14px;text-align:left;cursor:pointer;font-family:var(--f-body);box-shadow:0 1px 6px rgba(74,44,23,.06);transition:transform .12s ease,box-shadow .12s ease,border-color .12s ease;}
+.pcard:hover:not(.out){transform:translateY(-2px);box-shadow:0 6px 16px rgba(74,44,23,.12);border-color:var(--gold);}
+.pcard .pn{font-weight:700;color:var(--text);font-size:13.5px;line-height:1.3;}
+.pcard .pc{color:var(--gold);font-size:11px;margin-top:3px;}
+.pcard .pp{font-family:var(--f-display);font-weight:800;font-size:19px;margin-top:9px;letter-spacing:-.5px;}
+.pcard .ps{font-size:11px;color:var(--muted);margin-top:3px;}
+.pcard.out{opacity:.5;cursor:not-allowed;}
+.pcard.out .ps{color:#C2410C;font-weight:700;}
+.pos-none{display:none;text-align:center;color:var(--muted);padding:34px;font-size:14px;}
+
+.cart{background:var(--white);border:1px solid var(--border);border-radius:16px;box-shadow:0 1px 6px rgba(74,44,23,.06);position:sticky;top:14px;overflow:hidden;}
+.cart h3{font-family:var(--f-display);font-size:16px;padding:15px 16px;border-bottom:1px solid var(--border);margin:0;}
+.cart-body{max-height:48vh;overflow:auto;}
+.cart-empty{padding:34px 16px;text-align:center;color:var(--muted);font-size:13px;}
+.cline{display:flex;align-items:center;gap:10px;padding:11px 16px;border-bottom:1px solid var(--border);}
+.cline .ci{flex:1;min-width:0;}
+.cline .cn{font-weight:700;font-size:13px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.cline .cu{font-size:11px;color:var(--muted);margin-top:2px;}
+.qbtn{width:26px;height:26px;border-radius:7px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:15px;line-height:1;cursor:pointer;display:grid;place-items:center;font-family:var(--f-body);}
+.qbtn:hover{border-color:var(--gold);color:var(--gold);}
+.qn{min-width:22px;text-align:center;font-weight:700;font-size:13px;font-variant-numeric:tabular-nums;}
+.clt{font-weight:700;font-size:13px;font-variant-numeric:tabular-nums;min-width:66px;text-align:right;}
+.crm{background:none;border:none;color:var(--muted);cursor:pointer;font-size:16px;line-height:1;padding:2px 4px;}
+.crm:hover{color:#C2410C;}
+.cart-foot{padding:14px 16px;border-top:1px solid var(--border);background:var(--bg);}
+.cart-total{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:12px;}
+.cart-total .l{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;font-weight:700;}
+.cart-total .v{font-family:var(--f-display);font-size:28px;font-weight:800;letter-spacing:-1px;font-variant-numeric:tabular-nums;}
+.btn-primary{width:100%;background:var(--gold);color:#fff;border:none;border-radius:10px;padding:13px;font-size:14px;font-weight:700;cursor:pointer;font-family:var(--f-body);}
+.btn-primary:disabled{opacity:.45;cursor:not-allowed;}
+.recent{margin-top:14px;font-size:11.5px;color:var(--muted);}
+.recent .rh{text-transform:uppercase;letter-spacing:.5px;font-weight:700;margin-bottom:6px;}
+.recent .rr{display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px dashed var(--border);}
+.recent .rr.void{text-decoration:line-through;opacity:.6;}
+
+.modal-bg{display:none;position:fixed;inset:0;background:rgba(46,28,16,.5);z-index:60;align-items:center;justify-content:center;padding:16px;}
+.modal-bg.show{display:flex;}
+.modal{background:var(--white);border-radius:18px;max-width:440px;width:100%;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.3);}
+.modal h3{font-family:var(--f-display);font-size:18px;padding:18px 20px;margin:0;border-bottom:1px solid var(--border);}
+.modal-body{padding:18px 20px;}
+.mtotal{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:16px;padding-bottom:14px;border-bottom:1px solid var(--border);}
+.mtotal .l{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;font-weight:700;}
+.mtotal .v{font-family:var(--f-display);font-size:26px;font-weight:800;font-variant-numeric:tabular-nums;}
+.prow{margin-bottom:12px;}
+.prow .pl{display:flex;align-items:center;gap:9px;}
+.prow label{font-size:13px;font-weight:700;color:var(--text);min-width:64px;}
+.prow input,.prow select{flex:1;padding:9px 12px;border:1px solid var(--border);border-radius:9px;font-size:14px;background:var(--white);color:var(--text);font-family:var(--f-body);font-variant-numeric:tabular-nums;}
+.prow input:focus,.prow select:focus{outline:none;border-color:var(--gold);box-shadow:0 0 0 3px rgba(217,120,44,.14);}
+.online-box{margin-top:9px;margin-left:73px;display:none;}
+.online-box.show{display:block;}
+.online-box input{width:100%;margin-bottom:7px;}
+.online-box input:last-child{margin-bottom:0;}
+.msum{display:flex;justify-content:space-between;font-size:13px;padding:5px 0;}
+.msum.rem .v{font-weight:800;}
+.msum.rem.ok .v{color:#15803D;} .msum.rem.short .v{color:#C2410C;}
+.mfoot{padding:14px 20px;border-top:1px solid var(--border);display:flex;gap:10px;}
+.btn-ghost{flex:1;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:10px;padding:12px;font-size:14px;font-weight:700;cursor:pointer;font-family:var(--f-body);}
+.mfoot .btn-primary{flex:2;}
+</style>
+
+<div class="pos-wrap">
+  <div>
+    @if(session("success"))<div class="pos-alert ok">{{ session("success") }}</div>@endif
+    @if(session("error"))<div class="pos-alert err">{{ session("error") }}</div>@endif
+
+    <div class="pos-bar">
+      <div class="pos-search">
+        <svg stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-4.35-4.35M17 11a6 6 0 11-12 0 6 6 0 0112 0z"/></svg>
+        <input type="text" id="posSearch" placeholder="Search products..." oninput="posFilter()">
+      </div>
+      <select id="posCat" class="pos-cat" onchange="posFilter()">
+        <option value="">All Categories</option>
+        @foreach($cats as $c)<option value="{{ $c }}">{{ $c }}</option>@endforeach
+      </select>
+    </div>
+
+    <div class="pos-grid" id="posGrid">
+      @foreach($products as $p)
+        <button type="button"
+          class="pcard {{ (float)$p->stock_quantity <= 0 ? 'out' : '' }}"
+          data-id="{{ $p->id }}"
+          data-name="{{ $p->product_name }}"
+          data-price="{{ $p->price }}"
+          data-stock="{{ (int)$p->stock_quantity }}"
+          data-cat="{{ $p->category }}"
+          @if((float)$p->stock_quantity > 0) onclick="posAdd(this)" @else disabled @endif>
+          <div class="pn">{{ $p->product_name }}</div>
+          @if($p->category)<div class="pc">{{ $p->category }}</div>@endif
+          <div class="pp">&#8369;{{ number_format($p->price, 2) }}</div>
+          <div class="ps">{{ (float)$p->stock_quantity <= 0 ? 'Out of stock' : $p->stock_quantity.' in stock' }}</div>
+        </button>
+      @endforeach
+    </div>
+    <div class="pos-none" id="posNone">No products match your search.</div>
+  </div>
+
+  <div>
+    <div class="cart">
+      <h3>Current Order</h3>
+      <div class="cart-body" id="cartBody">
+        <div class="cart-empty" id="cartEmpty">Tap a product to start an order.</div>
+      </div>
+      <div class="cart-foot">
+        <div class="cart-total"><span class="l">Total</span><span class="v" id="cartTotal">&#8369;0.00</span></div>
+        <button class="btn-primary" id="chargeBtn" onclick="posOpenPay()" disabled>Charge</button>
+      </div>
+    </div>
+
+    @if($recent->count())
+    <div class="recent">
+      <div class="rh">Recent sales</div>
+      @foreach($recent as $r)
+        <div class="rr {{ $r->status === 'voided' ? 'void' : '' }}">
+          <span>{{ $r->sale_number }}</span>
+          <span>&#8369;{{ number_format($r->total, 2) }}</span>
+        </div>
+      @endforeach
+    </div>
+    @endif
+  </div>
+</div>
+
+<!-- Payment modal -->
+<div class="modal-bg" id="payBg">
+  <div class="modal">
+    <h3>Payment</h3>
+    <form method="POST" action="{{ route('pos.sales.store') }}" id="posForm">
+      @csrf
+      <div class="modal-body">
+        <div class="mtotal"><span class="l">Amount due</span><span class="v" id="payDue">&#8369;0.00</span></div>
+
+        <div class="prow">
+          <div class="pl"><label>Cash</label><div style="display:flex;gap:8px;align-items:center;"><input type="number" step="0.01" min="0" id="cashAmt" placeholder="0.00" oninput="posRecalc()" style="flex:1;"><button type="button" onclick="posExact()" style="padding:9px 14px;border:1px solid #D9782C;background:#FBF2E6;color:#8A3B0F;border-radius:9px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap;">Exact</button></div></div>
+        </div>
+
+        <div class="prow">
+          <div class="pl">
+            <label>Online</label>
+            <select id="onlineMethod" onchange="posRecalc()">
+              <option value="">E-wallet / Online Payment&hellip;</option>
+              <option value="gcash">GCash</option>
+              <option value="maya">Maya</option>
+              <option value="bank">Bank transfer</option>
+            </select>
+          </div>
+          <div class="online-box" id="onlineBox">
+            <input type="number" step="0.01" min="0" id="onlineAmt" placeholder="Amount received" oninput="posRecalc()">
+            <input type="text" id="onlineRef" maxlength="100" placeholder="Reference no." oninput="posRecalc()">
+          </div>
+        </div>
+
+        <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border);">
+          <div class="msum"><span>Paid</span><span class="v" id="paySum">&#8369;0.00</span></div>
+          <div class="msum rem" id="payRemRow"><span id="payRemLbl">Remaining</span><span class="v" id="payRem">&#8369;0.00</span></div>
+        </div>
+      </div>
+      <div class="mfoot">
+        <button type="button" class="btn-ghost" onclick="posClosePay()">Back</button>
+        <button type="submit" class="btn-primary" id="payConfirm" disabled>Complete Sale</button>
+      </div>
+      <div id="posHidden"></div>
+    </form>
+  </div>
+</div>
+
+<script>
+const cart = new Map(); // id -> {id,name,price,stock,qty}
+
+function peso(n){ return "\u20B1" + Number(n).toLocaleString("en-PH",{minimumFractionDigits:2,maximumFractionDigits:2}); }
+function cartTotal(){ let t=0; cart.forEach(i=> t += i.price*i.qty); return Math.round(t*100)/100; }
+
+function posAdd(btn){
+  const id = btn.dataset.id;
+  const stock = parseInt(btn.dataset.stock,10);
+  const cur = cart.get(id);
+  if (cur){ if (cur.qty < stock) cur.qty++; }
+  else { cart.set(id, {id, name:btn.dataset.name, price:parseFloat(btn.dataset.price), stock, qty:1}); }
+  renderCart();
+}
+function posSet(id, d){
+  const i = cart.get(id); if(!i) return;
+  i.qty += d;
+  if (i.qty <= 0) cart.delete(id);
+  else if (i.qty > i.stock) i.qty = i.stock;
+  renderCart();
+}
+function posRemove(id){ cart.delete(id); renderCart(); }
+
+function renderCart(){
+  const body = document.getElementById("cartBody");
+  const empty = document.getElementById("cartEmpty");
+  body.querySelectorAll(".cline").forEach(e=>e.remove());
+  if (cart.size === 0){ empty.style.display="block"; }
+  else {
+    empty.style.display="none";
+    cart.forEach(i=>{
+      const row = document.createElement("div");
+      row.className="cline";
+      row.innerHTML =
+        '<div class="ci"><div class="cn">'+i.name+'</div><div class="cu">'+peso(i.price)+' each</div></div>'+
+        '<button type="button" class="qbtn" onclick="posSet(\''+i.id+'\',-1)">&minus;</button>'+
+        '<span class="qn">'+i.qty+'</span>'+
+        '<button type="button" class="qbtn" onclick="posSet(\''+i.id+'\',1)">+</button>'+
+        '<span class="clt">'+peso(i.price*i.qty)+'</span>'+
+        '<button type="button" class="crm" title="Remove" onclick="posRemove(\''+i.id+'\')">&times;</button>';
+      body.appendChild(row);
+    });
+  }
+  document.getElementById("cartTotal").textContent = peso(cartTotal());
+  document.getElementById("chargeBtn").disabled = cart.size === 0;
+}
+
+function posFilter(){
+  const q = document.getElementById("posSearch").value.toLowerCase();
+  const cat = document.getElementById("posCat").value;
+  let shown = 0;
+  document.querySelectorAll("#posGrid .pcard").forEach(c=>{
+    const okq = c.dataset.name.toLowerCase().includes(q);
+    const okc = !cat || c.dataset.cat === cat;
+    const show = okq && okc; c.style.display = show ? "" : "none"; if(show) shown++;
+  });
+  document.getElementById("posNone").style.display = shown ? "none" : "block";
+}
+
+/* ----- payment modal ----- */
+function posOpenPay(){
+  if (cart.size === 0) return;
+  document.getElementById("payDue").textContent = peso(cartTotal());
+  document.getElementById("cashAmt").value = "";
+  document.getElementById("onlineMethod").value = "";
+  document.getElementById("onlineAmt").value = "";
+  document.getElementById("onlineRef").value = "";
+  posRecalc();
+  document.getElementById("payBg").classList.add("show");
+}
+function posClosePay(){ document.getElementById("payBg").classList.remove("show"); }
+
+function posExact(){
+  const total  = cartTotal();
+  const method = document.getElementById("onlineMethod").value;
+  const oAmt   = method ? (parseFloat(document.getElementById("onlineAmt").value) || 0) : 0;
+  const due    = Math.max(0, Math.round((total - oAmt) * 100) / 100);
+  document.getElementById("cashAmt").value = due.toFixed(2);
+  posRecalc();
+}
+
+function posRecalc(){
+  const total  = cartTotal();
+  const cash   = parseFloat(document.getElementById("cashAmt").value) || 0;
+  const method = document.getElementById("onlineMethod").value;
+  const oAmt   = parseFloat(document.getElementById("onlineAmt").value) || 0;
+  const oRef   = document.getElementById("onlineRef").value.trim();
+
+  const box = document.getElementById("onlineBox");
+  if (method) box.classList.add("show"); else box.classList.remove("show");
+
+  const paid = Math.round((cash + (method ? oAmt : 0)) * 100) / 100;
+  const rem  = Math.round((total - paid) * 100) / 100;
+
+  document.getElementById("paySum").textContent = peso(paid);
+  const remRow = document.getElementById("payRemRow");
+  if (rem > 0.009){
+    document.getElementById("payRemLbl").textContent = "Remaining";
+    document.getElementById("payRem").textContent = peso(rem);
+    remRow.classList.add("short"); remRow.classList.remove("ok");
+  } else {
+    document.getElementById("payRemLbl").textContent = rem < -0.009 ? "Change (give manually)" : "Fully paid";
+    document.getElementById("payRem").textContent = peso(Math.abs(rem));
+    remRow.classList.add("ok"); remRow.classList.remove("short");
+  }
+
+  const refMissing = method && oAmt > 0 && !oRef;
+  document.getElementById("payConfirm").disabled = (paid + 0.009 < total) || refMissing || cart.size === 0;
+}
+
+document.getElementById("posForm").addEventListener("submit", function(e){
+  const box = document.getElementById("posHidden"); box.innerHTML = "";
+  let n = 0;
+  cart.forEach(i=>{
+    box.insertAdjacentHTML("beforeend",
+      '<input type="hidden" name="items['+n+'][product_id]" value="'+i.id+'">'+
+      '<input type="hidden" name="items['+n+'][quantity]" value="'+i.qty+'">');
+    n++;
+  });
+  let m = 0;
+  const cash = parseFloat(document.getElementById("cashAmt").value) || 0;
+  if (cash > 0){
+    box.insertAdjacentHTML("beforeend",
+      '<input type="hidden" name="payments['+m+'][method]" value="cash">'+
+      '<input type="hidden" name="payments['+m+'][amount]" value="'+cash.toFixed(2)+'">'+
+      '<input type="hidden" name="payments['+m+'][reference]" value="">');
+    m++;
+  }
+  const method = document.getElementById("onlineMethod").value;
+  const oAmt   = parseFloat(document.getElementById("onlineAmt").value) || 0;
+  const oRef   = document.getElementById("onlineRef").value.trim();
+  if (method && oAmt > 0){
+    box.insertAdjacentHTML("beforeend",
+      '<input type="hidden" name="payments['+m+'][method]" value="'+method+'">'+
+      '<input type="hidden" name="payments['+m+'][amount]" value="'+oAmt.toFixed(2)+'">'+
+      '<input type="hidden" name="payments['+m+'][reference]" value="'+oRef+'">');
+    m++;
+  }
+});
+</script>
+</x-app-layout>
+
+===== database/migrations/2026_10_04_000004_add_image_to_products.php =====
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    public function up(): void
+    {
+        Schema::table('products', function (Blueprint $table) {
+            if (! Schema::hasColumn('products', 'image_path')) {
+                $table->string('image_path')->nullable()->after('status');
+            }
+        });
+    }
+
+    public function down(): void
+    {
+        Schema::table('products', function (Blueprint $table) {
+            if (Schema::hasColumn('products', 'image_path')) {
+                $table->dropColumn('image_path');
+            }
+        });
+    }
+};
+

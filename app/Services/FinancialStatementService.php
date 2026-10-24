@@ -13,7 +13,9 @@ use Illuminate\Support\Facades\DB;
  *
  * REVENUE
  *   1. Custom orders & commissions: total_amount of orders marked Completed, dated by completed_at.
- *   2. Branch sales: (qty_sent - qty_returned) x unit_price of RECONCILED branch batches, dated by batch_date.
+ *   2. Branch sales, by batch_date:
+ *        - BEFORE the cutoff: legacy rule, (qty_sent - qty_returned) x unit_price of RECONCILED batches.
+ *        - ON/AFTER the cutoff: FINAL SALE, qty_sent x unit_price of every non-voided batch.
  * EXPENSES
  *   Active (non-voided) expenses dated by expense_date.
  *   COGS = ingredients + packaging; everything else is Operating Expense.
@@ -21,6 +23,9 @@ use Illuminate\Support\Facades\DB;
  */
 class FinancialStatementService
 {
+    /** Batches dated on/after this are final sales (no returns, no reconciliation). */
+    public const BRANCH_FINAL_SALE_FROM = '2026-10-07';
+
     public function build(Carbon $from, Carbon $to): array
     {
         $from = $from->copy()->startOfDay();
@@ -31,11 +36,21 @@ class FinancialStatementService
             ->whereBetween('completed_at', [$from, $to])
             ->sum('total_amount');
 
-        $branchRevenue = (float) BatchItem::query()
+        $legacyBranch = (float) BatchItem::query()
             ->join('batches', 'batches.id', '=', 'batch_items.batch_id')
             ->where('batches.status', 'reconciled')
+            ->where('batches.batch_date', '<', self::BRANCH_FINAL_SALE_FROM)
             ->whereBetween('batches.batch_date', [$from->toDateString(), $to->toDateString()])
             ->sum(DB::raw('(batch_items.qty_sent - batch_items.qty_returned) * batch_items.unit_price'));
+
+        $finalBranch = (float) BatchItem::query()
+            ->join('batches', 'batches.id', '=', 'batch_items.batch_id')
+            ->whereNull('batches.voided_at')
+            ->where('batches.batch_date', '>=', self::BRANCH_FINAL_SALE_FROM)
+            ->whereBetween('batches.batch_date', [$from->toDateString(), $to->toDateString()])
+            ->sum(DB::raw('(batch_items.qty_sent - batch_items.qty_returned) * batch_items.unit_price'));
+
+        $branchRevenue = $legacyBranch + $finalBranch;
 
         $byCategory = Expense::active()
             ->whereBetween('expense_date', [$from->toDateString(), $to->toDateString()])

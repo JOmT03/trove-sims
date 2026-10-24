@@ -1,69 +1,505 @@
 <x-app-layout>
 <x-slot name="header">Branch Transfers</x-slot>
-<x-slot name="subheader">Matina &rarr; Jacinto weekly batches &amp; returns reconciliation</x-slot>
+<x-slot name="subheader">Matina &rarr; Jacinto: orders and their deliveries (final sale)</x-slot>
 
 <style>
-.bt-card{background:#fff;border-radius:14px;box-shadow:0 1px 6px rgba(0,0,0,.07);overflow:hidden;}
-.bt-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;gap:12px;flex-wrap:wrap;}
-.btn{padding:10px 18px;border-radius:9px;font-size:13px;font-weight:700;border:none;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:7px;}
-.btn-gold{background:#D9782C;color:#fff;}
-.alert{padding:12px 16px;border-radius:9px;font-size:13px;margin-bottom:16px;}
-.alert-ok{background:#E7F3EA;border:1px solid #bbf7d0;color:#166534;}
-.alert-err{background:#FBE4DA;border:1px solid #fecaca;color:#991b1b;}
+.card{background:#fff;border-radius:14px;box-shadow:0 1px 6px rgba(0,0,0,.07);overflow:hidden;margin-bottom:22px;}
+.card-h{display:flex;justify-content:space-between;align-items:center;padding:16px 18px;border-bottom:1px solid #EDE0D0;gap:10px;flex-wrap:wrap;}
+.card-h h3{font-size:15px;font-weight:800;color:#2E1C10;margin:0;}
 table{width:100%;border-collapse:collapse;font-size:13px;}
-th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#8A7460;padding:12px 16px;background:#FDF6EC;}
-th.r,td.r{text-align:right;}
-td{padding:12px 16px;border-top:1px solid #EDE0D0;font-variant-numeric:tabular-nums;}
-.badge{font-size:10.5px;font-weight:700;padding:3px 9px;border-radius:999px;}
-.badge.sent{background:#FBEBD6;color:#B45309;}
-.badge.rec{background:#E7F3EA;color:#166534;}
-.lnk{color:#4A2C17;font-weight:700;text-decoration:none;}
-.lnk:hover{text-decoration:underline;}
-.empty{padding:50px 20px;text-align:center;color:#8A7460;}
+th{text-align:right;font-size:11px;text-transform:uppercase;color:#8A7460;padding:10px 14px;background:#FDF6EC;}
+th:first-child,th.l{text-align:left;}
+td{padding:11px 14px;border-top:1px solid #EDE0D0;text-align:right;font-variant-numeric:tabular-nums;vertical-align:top;}
+td:first-child,td.l{text-align:left;}
+.ft th,.ft td{text-align:left;border-top:none;}
+.btn{padding:9px 16px;border-radius:9px;font-size:13px;font-weight:700;border:none;cursor:pointer;text-decoration:none;display:inline-block;}
+.btn.sm{padding:6px 12px;font-size:12px;}
+.btn-gold{background:#D9782C;color:#fff;} .btn-outline{background:#f3f4f6;color:#374151;border:1px solid #e5e7eb;}
+.btn-green{background:#166534;color:#fff;} .btn-red{background:#fff;color:#B91C1C;border:1px solid #fecaca;}
+.badge{font-size:10.5px;font-weight:700;padding:3px 9px;border-radius:999px;background:#FBEBD6;color:#B45309;}
+.badge.sent{background:#E7F3EA;color:#166534;}
+.badge.cancelled,.badge.voided{background:#f3f4f6;color:#6b7280;}
+.neg{color:#C2410C;font-weight:700;} .muted{color:#9ca3af;} .strike{text-decoration:line-through;color:#9ca3af;}
+.note{font-size:11.5px;color:#B45309;margin-top:4px;font-weight:600;}
+.alert-ok{background:#E7F3EA;border:1px solid #bbf7d0;color:#166534;padding:12px 16px;border-radius:9px;margin-bottom:16px;font-size:13px;}
+.alert-err{background:#FBE4DA;border:1px solid #fecaca;color:#991b1b;padding:12px 16px;border-radius:9px;margin-bottom:16px;font-size:13px;}
+label.f{display:block;font-size:13px;font-weight:700;color:#374151;margin-bottom:6px;}
+.in{width:100%;padding:9px 12px;border:1.5px solid #e2e8f0;border-radius:9px;font-size:14px;background:#fff;}
+.addrow{padding:7px 12px;border:1.5px dashed #EDE0D0;border-radius:9px;background:#fff;color:#8A7460;font-size:12.5px;font-weight:600;cursor:pointer;}
+.rm{background:none;border:none;color:#ef4444;cursor:pointer;font-size:15px;}
+details.more{display:inline-block;vertical-align:top;margin-left:4px;text-align:right;}
+details.more summary{cursor:pointer;font-size:12px;color:#8A7460;padding:6px 4px;}
+.more-box{margin-top:6px;display:flex;flex-direction:column;gap:6px;align-items:flex-end;}
+.dl{background:#FFFBF5;border-top:1px dashed #EDE0D0;padding:2px 0;}
+.dline{display:flex;gap:18px;align-items:center;padding:7px 14px 7px 40px;font-size:12.5px;border-top:1px dashed #F3E9DB;}
+.dline:first-child{border-top:none;}
+.dline .d{width:105px;color:#374151;} .dline .q{width:70px;} .dline .r{width:110px;font-weight:700;}
+.dline a{margin-left:auto;font-weight:700;color:#2E1C10;text-decoration:none;}
+.sm2{display:flex;gap:22px;flex-wrap:wrap;padding:10px 18px;background:#FDF6EC;border-bottom:1px solid #EDE0D0;font-size:13px;}
+.bov{position:fixed;inset:0;background:rgba(46,28,16,.45);display:none;align-items:center;justify-content:center;padding:16px;z-index:60;}
+.bov.on{display:flex;}
+.bmd{background:#fff;border-radius:16px;width:100%;max-width:660px;max-height:100%;display:flex;flex-direction:column;box-shadow:0 20px 50px rgba(0,0,0,.3);}
+.bmh{display:flex;justify-content:space-between;align-items:center;padding:16px 20px;border-bottom:1px solid #EDE0D0;}
+.bmh h3{margin:0;font-size:16px;font-weight:800;color:#2E1C10;}
+.bx{background:none;border:0;color:#8A7460;font-size:22px;cursor:pointer;line-height:1;padding:2px 6px;}
+.bmb{padding:18px 20px;overflow:auto;}
+.bmf{display:flex;gap:10px;justify-content:flex-end;margin-top:16px;padding-top:14px;border-top:1px solid #EDE0D0;}
+.bg2{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px;}
+@media(max-width:520px){.bg2{grid-template-columns:1fr;}}
+.brw{display:flex;gap:8px;align-items:flex-start;margin-bottom:10px;}
+.brw input.q{width:84px;} .brw input.p{width:100px;}
+.bcap{font-size:11px;color:#8A7460;display:flex;gap:8px;padding-right:34px;margin-bottom:4px;}
+.bcap span:first-child{flex:1;} .bcap span:nth-child(2){width:84px;} .bcap span:nth-child(3){width:100px;}
+.bh{font-size:11.5px;font-weight:600;color:#166534;margin-top:4px;} .bh.lo{color:#C2410C;}
+.bwn{display:none;background:#FEF3C7;color:#92400E;padding:10px 13px;border-radius:9px;font-size:13px;margin-top:10px;}
+.ber{display:none;background:#FBE4DA;color:#991b1b;padding:10px 13px;border-radius:9px;font-size:13px;margin-top:10px;}
+.slip h4{margin:0 0 2px;font-size:18px;color:#2E1C10;}
+.slip .mt{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:10px 0;align-items:center;}
+.bpb{border:2px solid #C2410C;color:#C2410C;padding:2px 10px;border-radius:6px;font-weight:700;}
+.bsg{display:flex;gap:40px;margin-top:34px;font-size:12px;} .bsg span{flex:1;border-top:1px solid #8A7460;padding-top:4px;color:#8A7460;}
+@media print{
+ body *{visibility:hidden!important;}
+ #slipArea,#slipArea *{visibility:visible!important;}
+ .bov,.bmd,.bmb{position:static!important;display:block!important;overflow:visible!important;max-height:none!important;box-shadow:none!important;background:none!important;padding:0!important;border:0!important;}
+ #slipArea{position:absolute;left:0;top:0;width:100%;}
+}
 </style>
 
+@php
+    $productData = $products->map(fn($p) => ['id' => $p->id, 'name' => $p->product_name])->values();
+    $byOrder = $batches->groupBy('branch_order_id');
+    $shownIds = $orders->pluck('id')->all();
+    $other = $batches->filter(fn($b) => !$b->branch_order_id || !in_array($b->branch_order_id, $shownIds));
+    $batchRev = fn($b) => $b->items->sum(fn($i) => ($i->qty_sent - $i->qty_returned) * $i->unit_price);
+@endphp
+
 <div style="max-width:1050px;margin:0 auto;">
-    <div class="bt-head">
-        <div style="font-size:13px;color:#8A7460;">Each batch records what Matina sent and what Jacinto returned. The system computes <strong style="color:#2E1C10;">Net Sold = Sent - Returned</strong> &mdash; fully offline.</div>
-        @can('admin')
-        <a href="{{ route('branch-transfers.create') }}" class="btn btn-gold">+ New Batch Dispatch</a>
-        @endcan
+@if(session('success'))<div class="alert-ok">{{ session('success') }}</div>@endif
+@if(session('error'))<div class="alert-err">{{ session('error') }}</div>@endif
+@if($errors->any())
+<div class="alert-err"><ul style="margin:0 0 0 18px;">@foreach($errors->all() as $e)<li>{{ $e }}</li>@endforeach</ul></div>
+@endif
+
+<div class="card">
+    <div class="card-h">
+        <h3>Orders &amp; Deliveries</h3>
+        <div style="display:flex;gap:8px;">
+            <button type="button" class="btn btn-gold" onclick="printPending()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px"><path d="M6 9V2h12v7M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg> Print pending</button>
+            <button type="button" class="btn btn-outline" onclick="openNew()">+ New Order</button>
+            <button type="button" class="btn btn-gold" onclick="openSend()">+ Send Batch</button>
+        </div>
     </div>
 
-    @if(session('success'))<div class="alert alert-ok">{{ session('success') }}</div>@endif
-    @if(session('error'))<div class="alert alert-err">{{ session('error') }}</div>@endif
+    @php
+    $pendO = $orders->filter(fn($o) => in_array($o->status, ['requested','produced','partial']));
+@endphp
+    <div class="sm2">
+        <span><b>{{ $pendO->count() }}</b> pending order{{ $pendO->count() == 1 ? '' : 's' }}</span>
+        <span><b>{{ $pendO->sum('balance_qty') }}</b> pcs not yet sent</span>
+        @if($pendO->count())<span class="muted">Earliest needed: {{ $pendO->sortBy('needed_by')->first()->needed_by->format('M d, Y') }}</span>
+        @else<span class="muted">Everything is sent.</span>@endif
+    </div>
 
-    <div class="bt-card">
-        @if($batches->count())
-        <table>
-            <thead>
-                <tr>
-                    <th>Batch Date</th><th>Route</th><th class="r">Sent</th>
-                    <th class="r">Returned</th><th class="r">Net Sold</th>
-                    <th class="r">Revenue</th><th>Status</th><th></th>
-                </tr>
-            </thead>
-            <tbody>
-                @foreach($batches as $batch)
-                <tr>
-                    <td>{{ $batch->batch_date->format('M d, Y') }}</td>
-                    <td>{{ $batch->sourceSite->site_name ?? 'Matina' }} &rarr; {{ $batch->destinationSite->site_name ?? 'Jacinto' }}</td>
-                    <td class="r">{{ $batch->totalSent() }}</td>
-                    <td class="r" style="color:#C2410C;">{{ $batch->totalReturned() }}</td>
-                    <td class="r" style="font-weight:700;">{{ $batch->totalNetSold() }}</td>
-                    <td class="r">&#8369;{{ number_format($batch->totalRevenue(), 2) }}</td>
-                    <td><span class="badge {{ $batch->status === 'reconciled' ? 'rec' : 'sent' }}">{{ ucfirst($batch->status) }}</span></td>
-                    <td class="r"><a href="{{ route('branch-transfers.show', $batch) }}" class="lnk">View &rarr;</a></td>
-                </tr>
-                @endforeach
-            </tbody>
-        </table>
-        @else
-        <div class="empty">
-            <p style="margin-bottom:16px;">No batches yet.</p>
-            @can('admin')<a href="{{ route('branch-transfers.create') }}" class="btn btn-gold">+ Create First Batch</a>@endcan
-        </div>
-        @endif
+    <table>
+        <thead><tr><th>Needed By</th><th class="l">Items (sent / ordered)</th><th>Ordered</th><th>Sent</th><th>Balance</th><th>Revenue</th><th>Status</th><th></th></tr></thead>
+        <tbody>
+        @forelse($orders as $o)
+            @php
+                $isPending = in_array($o->status, ['requested','produced','partial']);
+                if ($o->status === 'complete') { $label = $o->sent_qty > 0 ? 'Sent' : 'Closed'; $cls = $o->sent_qty > 0 ? 'sent' : 'cancelled'; }
+                elseif ($o->status === 'cancelled') { $label = 'Cancelled'; $cls = 'cancelled'; }
+                else { $label = 'Pending'; $cls = ''; }
+                $closedQty = $o->items->sum('qty_closed');
+                $deliv = $byOrder->get($o->id, collect());
+                $orderRev = $deliv->filter(fn($b) => empty($b->voided_at))->sum($batchRev);
+            @endphp
+            <tr>
+                <td>{{ $o->needed_by->format('M d, Y') }}<div class="muted" style="font-size:11px;">#{{ $o->id }}</div></td>
+                <td class="l" style="font-size:12.5px;">
+                    @foreach($o->items as $it){{ $it->product->product_name ?? '?' }} {{ $it->delivered }}/{{ $it->qty }}@if(!$loop->last), @endif @endforeach
+                    @if($o->status === 'produced')<span class="muted"> &middot; produced</span>@endif
+                    @if($isPending && $o->sent_qty > 0 && $o->balance_qty > 0)
+                        <div class="note">Short {{ $o->balance_qty }}: to be delivered in the next batch</div>
+                    @endif
+                    @if($o->status === 'complete' && $o->short_reason)
+                        <div class="note">Closed short {{ $closedQty }}: {{ $o->short_reason }}</div>
+                    @endif
+                    @if($o->notes)<div class="muted" style="font-size:11.5px;">{{ $o->notes }}</div>@endif
+                </td>
+                <td>{{ $o->ordered_qty }}</td>
+                <td>{{ $o->sent_qty }}</td>
+                <td>
+                    @if($isPending)<span class="{{ $o->sent_qty > 0 && $o->balance_qty > 0 ? 'neg' : '' }}">{{ $o->balance_qty }}</span>
+                    @else<span class="muted">&mdash;</span>@endif
+                </td>
+                <td style="font-weight:700;">{!! $orderRev > 0 ? '&#8369;'.number_format($orderRev,2) : '<span class="muted">&mdash;</span>' !!}</td>
+                <td><span class="badge {{ $cls }}">{{ $label }}</span></td>
+                <td style="white-space:nowrap;"><button type="button" class="btn btn-outline sm" onclick="printOrder({{ $o->id }})">Print</button> 
+                    @if($isPending)
+                        <button type="button" class="btn btn-green sm" onclick="openSend({{ $o->id }})">Send</button>
+                        @if($o->status === 'requested')
+                        <form method="POST" action="{{ route('branch-orders.produce', $o) }}" style="display:inline;">@csrf<button class="btn btn-outline sm">Produced</button></form>
+                        @endif
+                        <details class="more">
+                            <summary>More</summary>
+                            <div class="more-box">
+                                @if($o->sent_qty > 0 && $o->balance_qty > 0)
+                                <form method="POST" action="{{ route('branch-orders.close-short', $o) }}" onsubmit="return confirm('Close this order? The {{ $o->balance_qty }} pcs balance will NOT be delivered or sold.');" style="display:flex;gap:6px;">
+                                    @csrf
+                                    <input type="text" name="reason" class="in" style="width:150px;padding:6px 8px;font-size:12px;" placeholder="Reason" required minlength="3" maxlength="500">
+                                    <button class="btn btn-red sm">Close short</button>
+                                </form>
+                                @endif
+                                @if($o->sent_qty == 0)
+                                <form method="POST" action="{{ route('branch-orders.cancel', $o) }}" onsubmit="return confirm('Cancel this order?');">@csrf<button class="btn btn-red sm">Cancel order</button></form>
+                                @endif
+                            </div>
+                        </details>
+                    @endif
+                </td>
+            </tr>
+            @if($deliv->count())
+            <tr>
+                <td colspan="8" style="padding:0;border-top:none;text-align:left;">
+                    <div class="dl">
+                        @foreach($deliv as $b)
+                            @php $v = !empty($b->voided_at); @endphp
+                            <div class="dline">
+                                <span class="d">&#8627; {{ $b->batch_date->format('M d, Y') }}</span>
+                                <span class="q {{ $v ? 'strike' : '' }}">{{ $b->items->sum('qty_sent') }} pcs</span>
+                                <span class="r {{ $v ? 'strike' : '' }}">&#8369;{{ number_format($batchRev($b),2) }}</span>
+                                <span class="badge {{ $v ? 'voided' : 'sent' }}">{{ $v ? 'Voided' : 'Sent' }}</span>
+                                <a href="{{ route('branch-transfers.show', $b) }}">View &rarr;</a>
+                            </div>
+                        @endforeach
+                    </div>
+                </td>
+            </tr>
+            @endif
+        @empty
+            <tr><td colspan="8" class="l" style="color:#8A7460;">No orders yet. Click + New Order.</td></tr>
+        @endforelse
+        </tbody>
+    </table>
+</div>
+
+@if($other->count())
+<div class="card">
+    <div class="card-h"><h3>Other deliveries (no order)</h3></div>
+    <table>
+        <thead><tr><th>Date</th><th class="l">Route</th><th>Order</th><th>Sent</th><th>Returned</th><th>Revenue</th><th>Status</th><th></th></tr></thead>
+        <tbody>
+        @foreach($other as $b)
+            @php
+                $sent = $b->items->sum('qty_sent');
+                $ret  = $b->items->sum('qty_returned');
+                $isVoid = !empty($b->voided_at);
+            @endphp
+            <tr>
+                <td>{{ $b->batch_date->format('M d, Y') }}</td>
+                <td class="l">{{ $b->sourceSite->site_name ?? 'Matina' }} &rarr; {{ $b->destinationSite->site_name ?? 'Jacinto' }}</td>
+                <td>{!! $b->branch_order_id ? '#'.$b->branch_order_id : '<span class="muted">&mdash;</span>' !!}</td>
+                <td class="{{ $isVoid ? 'strike' : '' }}">{{ $sent }}</td>
+                <td>{!! $ret > 0 ? '<span class="neg">'.$ret.'</span>' : '<span class="muted">&mdash;</span>' !!}</td>
+                <td class="{{ $isVoid ? 'strike' : '' }}" style="font-weight:700;">&#8369;{{ number_format($batchRev($b),2) }}</td>
+                <td><span class="badge {{ $isVoid ? 'voided' : 'sent' }}">{{ $isVoid ? 'Voided' : 'Sent' }}</span></td>
+                <td><a href="{{ route('branch-transfers.show', $b) }}" style="font-weight:700;color:#2E1C10;text-decoration:none;">View &rarr;</a></td>
+            </tr>
+        @endforeach
+        </tbody>
+    </table>
+</div>
+@endif
+</div>
+
+<div id="bov" class="bov" role="dialog" aria-modal="true" aria-labelledby="bmt">
+    <div class="bmd">
+        <div class="bmh"><h3 id="bmt"></h3><button type="button" class="bx" onclick="closeM()" aria-label="Close">&times;</button></div>
+        <div class="bmb" id="bmb"></div>
     </div>
 </div>
+
+@php
+    $jf = JSON_HEX_TAG | JSON_HEX_AMP | JSON_UNESCAPED_UNICODE;
+    $pnames = $products->pluck('product_name', 'id');
+    $sendProducts = $products->map(fn($p) => ['id' => (int) $p->id, 'name' => $p->product_name, 'price' => (float) $p->price, 'stock' => (int) $p->stock_quantity])->values();
+    $siteData = $sites->map(fn($s) => ['id' => (int) $s->id, 'name' => $s->site_name])->values();
+    $openOrders = $orders->filter(fn($o) => in_array($o->status, ['requested','produced','partial']) && $o->balance_qty > 0)
+        ->map(fn($o) => [
+            'id' => (int) $o->id, 'need' => $o->needed_by->format('M d, Y'), 'ord' => (int) $o->ordered_qty, 'bal' => (int) $o->balance_qty,
+            'items' => $o->items->map(fn($i) => ['pid' => (int) $i->product_id, 'q' => (int) $i->qty, 'bl' => (int) $i->balance])->values(),
+        ])->values();
+    $slips = $orders->map(function ($o) use ($byOrder, $batchRev, $pnames) {
+        $del = $byOrder->get($o->id, collect())
+            ->filter(fn($b) => empty($b->voided_at))
+            ->sortBy('id')
+            ->values();
+        $pend = in_array($o->status, ['requested', 'produced', 'partial']);
+
+        return [
+            'id' => (int) $o->id,
+            'raw' => $o->needed_by->format('Y-m-d'),
+            'need' => $o->needed_by->format('M d, Y'),
+            // Keep these labels compatible with the existing Print pending filter and order table.
+            'st' => $pend ? 'Pending' : ($o->status === 'complete' ? ($o->sent_qty > 0 ? 'Sent' : 'Closed') : 'Cancelled'),
+            'ord' => (int) $o->ordered_qty,
+            'sent' => (int) $o->sent_qty,
+            'bal' => (int) $o->balance_qty,
+            'note' => $o->notes,
+            'why' => $o->short_reason,
+            'closed' => (int) $o->items->sum('qty_closed'),
+            'rev' => round($del->sum($batchRev), 2),
+            'items' => $o->items->map(fn($i) => [
+                'n' => $i->product->product_name ?? '?',
+                'q' => (int) $i->qty,
+                'd' => (int) $i->delivered,
+                'bl' => (int) $i->balance,
+            ])->values(),
+            'dl' => $del->map(fn($b) => [
+                'd' => $b->batch_date->format('M d, Y'),
+                'pcs' => (int) $b->items->sum('qty_sent'),
+                'amt' => round($batchRev($b), 2),
+                'items' => $b->items->map(fn($i) => [
+                    'n' => $pnames[$i->product_id] ?? '?',
+                    'q' => (int) $i->qty_sent,
+                    'ret' => (int) $i->qty_returned,
+                    'net' => (int) $i->qty_sent - (int) $i->qty_returned,
+                    'pr' => (float) $i->unit_price,
+                    'amt' => round(((int) $i->qty_sent - (int) $i->qty_returned) * (float) $i->unit_price, 2),
+                ])->values(),
+            ])->values(),
+        ];
+    })->values();
+@endphp
+
+<script>
+const PRODUCTS = {!! json_encode($sendProducts, $jf) !!};
+const SITES = {!! json_encode($siteData, $jf) !!};
+const OPEN = {!! json_encode($openOrders, $jf) !!};
+const SLIPS = {!! json_encode($slips, $jf) !!};
+const OLD = {!! json_encode(old(), $jf) !!};
+const URL_SEND = "{{ route('branch-transfers.store') }}";
+const URL_ORDER = "{{ route('branch-orders.store') }}";
+const CSRF = "{{ csrf_token() }}";
+const TODAY = "{{ date('Y-m-d') }}", TODAY_LBL = "{{ date('M d, Y') }}", TMR = "{{ date('Y-m-d', strtotime('+1 day')) }}";
+const PRINT_ICON = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px"><path d="M6 9V2h12v7M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>';
+
+const $ = s => document.querySelector(s);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const peso = n => '\u20B1' + Number(n).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+const pb = id => PRODUCTS.find(p => p.id == id);
+let S = null, N = null;
+
+function modal(t, h){ $('#bmt').textContent = t; $('#bmb').innerHTML = h; $('#bov').classList.add('on'); setTimeout(function(){ const e = $('#bmb select, #bmb input'); if(e) e.focus(); }, 30); }
+function closeM(){ $('#bov').classList.remove('on'); }
+$('#bov').addEventListener('mousedown', function(e){ if(e.target.id === 'bov') closeM(); });
+document.addEventListener('keydown', function(e){ if(e.key === 'Escape') closeM(); });
+const er = m => { const e = $('#err'); e.textContent = m; e.style.display = 'block'; };
+const siteOpts = k => SITES.map(s => '<option value="' + s.id + '"' + (s.name.toLowerCase().indexOf(k) > -1 ? ' selected' : '') + '>' + esc(s.name) + '</option>').join('');
+const foot = b => '<div class="bmf"><button type="button" class="btn btn-outline" onclick="closeM()">Cancel</button>' + b + '</div>';
+
+/* ---------- Send Batch ---------- */
+const so = () => OPEN.find(o => o.id == S.o);
+const avail = () => so().items.filter(x => x.bl > 0 && pb(x.pid));
+function fill(){
+    S.rows = S.o ? avail().map(function(x){ const p = pb(x.pid); return {pid: String(x.pid), qty: Math.max(1, Math.min(x.bl, p.stock)), pr: p.price}; }) : [{pid:'', qty:1, pr:''}];
+}
+function openSend(oid, old){
+    S = {o: oid ? String(oid) : '', rows: [], warn: false};
+    if(S.o && !so()) S.o = '';
+    if(old && old.length) S.rows = old; else fill();
+    const oo = OPEN.map(o => '<option value="' + o.id + '"' + (S.o == o.id ? ' selected' : '') + '>#' + o.id + ' \u00b7 needed ' + esc(o.need) + ' \u00b7 ordered ' + o.ord + ', balance ' + o.bal + '</option>').join('');
+    modal('Send to Branch',
+        '<form id="bf" method="POST" action="' + URL_SEND + '"><input type="hidden" name="_token" value="' + CSRF + '">'
+        + '<div class="bg2"><div><label class="f">From *</label><select class="in" name="source_site_id">' + siteOpts('matina') + '</select></div>'
+        + '<div><label class="f">To *</label><select class="in" name="destination_site_id">' + siteOpts('jacinto') + '</select></div></div>'
+        + '<div class="bg2"><div><label class="f">Send date *</label><input class="in" type="date" name="batch_date" value="' + esc(OLD.batch_date || TODAY) + '" required></div>'
+        + '<div><label class="f">Fulfill order</label><select class="in" name="branch_order_id" onchange="oc(this.value)"><option value="">No order (manual)</option>' + oo + '</select></div></div>'
+        + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><label class="f" style="margin:0">Products sent</label><button type="button" class="addrow" onclick="addR()">+ Add product</button></div>'
+        + '<div class="bcap"><span>Product</span><span>Qty</span><span>Unit price</span></div><div id="rws"></div>'
+        + '<p class="muted" style="font-size:12px;margin:6px 0 0">Final sale: counted as revenue right away. If you send less than the balance, the shortage stays on the order for the next batch.</p>'
+        + '<div class="bwn" id="wn"></div><div class="ber" id="err"></div>'
+        + foot('<button type="button" class="btn btn-gold" id="sb" onclick="goSend()">Send batch</button>') + '</form>');
+    drawRows();
+}
+function opts(sel){
+    const l = S.o ? avail().map(x => [x.pid, pb(x.pid).name + ' \u2014 ordered ' + x.q + ', balance ' + x.bl + ' (' + pb(x.pid).stock + ' on hand)']) : PRODUCTS.map(p => [p.id, p.name + ' (' + p.stock + ' on hand)']);
+    return '<option value="">Select a product</option>' + l.map(a => '<option value="' + a[0] + '"' + (sel == a[0] ? ' selected' : '') + '>' + esc(a[1]) + '</option>').join('');
+}
+function drawRows(){
+    $('#rws').innerHTML = S.rows.map((r, i) =>
+        '<div class="brw"><div style="flex:1;min-width:0"><select class="in" name="items[' + i + '][product_id]" onchange="pk(' + i + ',this.value)" aria-label="Product">' + opts(r.pid) + '</select><div class="bh" id="h' + i + '"></div></div>'
+        + '<input class="in q" type="number" min="1" name="items[' + i + '][qty_sent]" value="' + esc(r.qty) + '" oninput="qy(' + i + ',this.value)" aria-label="Quantity">'
+        + '<input class="in p" type="number" step="0.01" min="0" name="items[' + i + '][unit_price]" value="' + esc(r.pr) + '" oninput="S.rows[' + i + '].pr=this.value" aria-label="Unit price">'
+        + '<button type="button" class="bx" onclick="rmR(' + i + ')" aria-label="Remove row">&times;</button></div>').join('');
+    S.rows.forEach(function(_, i){ hint(i); });
+}
+function hint(i){
+    const r = S.rows[i], el = $('#h' + i); if(!el) return;
+    if(!r.pid){ el.textContent = ''; return; }
+    const p = pb(r.pid); if(!p){ el.textContent = ''; return; }
+    const q = +r.qty || 0; let m = 'On hand: ' + p.stock, c = 'bh';
+    if(q > p.stock){ m = 'Only ' + p.stock + ' on hand'; c = 'bh lo'; }
+    else if(S.o){
+        const it = so().items.find(x => x.pid == r.pid);
+        if(it){
+            if(q > it.bl){ m += ' \u00b7 Over the order by ' + (q - it.bl); c = 'bh lo'; }
+            else if(q < it.bl){ m += ' \u00b7 Short by ' + (it.bl - q) + ', to be delivered in the next batch'; }
+            else { m += ' \u00b7 Matches the order'; }
+        }
+    }
+    el.textContent = m; el.className = c;
+}
+function resetWarn(){ S.warn = false; $('#wn').style.display = 'none'; $('#err').style.display = 'none'; $('#sb').textContent = 'Send batch'; }
+function oc(v){ S.o = v || ''; if(S.o && !so()) S.o = ''; fill(); drawRows(); resetWarn(); }
+function pk(i, v){
+    const r = S.rows[i]; r.pid = v;
+    if(v){ const p = pb(v); r.pr = p.price; const it = S.o ? so().items.find(x => x.pid == v) : null; r.qty = Math.max(1, Math.min(it ? it.bl : 1, p.stock)); }
+    drawRows(); resetWarn();
+}
+function qy(i, v){ S.rows[i].qty = v; hint(i); resetWarn(); }
+function addR(){ S.rows.push({pid:'', qty:1, pr:''}); drawRows(); }
+function rmR(i){ S.rows.splice(i, 1); drawRows(); resetWarn(); }
+function goSend(){
+    $('#err').style.display = 'none';
+    const rs = S.rows.filter(r => r.pid);
+    if(!rs.length) return er('Add at least one product.');
+    for(const r of rs){
+        const p = pb(r.pid), q = +r.qty;
+        if(!(q >= 1)) return er('Quantity must be at least 1.');
+        if(q > p.stock) return er('Only ' + p.stock + ' ' + p.name + ' on hand. Lower the quantity.');
+    }
+    const sh = [];
+    if(S.o) avail().forEach(function(x){
+        const s = rs.filter(r => r.pid == x.pid).reduce((a, r) => a + (+r.qty), 0);
+        if(s < x.bl) sh.push(pb(x.pid).name + ' short ' + (x.bl - s));
+    });
+    if(sh.length && !S.warn){
+        S.warn = true; const w = $('#wn');
+        w.innerHTML = '<b>Short: ' + esc(sh.join(', ')) + '.</b> You can still send. The shortage is noted and delivered in the next batch.';
+        w.style.display = 'block'; $('#sb').textContent = 'Send anyway'; return;
+    }
+    S.rows = rs; drawRows(); $('#bf').submit();
+}
+
+/* ---------- New Order ---------- */
+function openNew(old){
+    N = {rows: (old && old.length) ? old : [{pid:'', qty:1}]};
+    modal('New order from Jacinto',
+        '<form id="bf" method="POST" action="' + URL_ORDER + '"><input type="hidden" name="_token" value="' + CSRF + '">'
+        + '<div class="bg2"><div><label class="f">Branch *</label><select class="in" name="destination_site_id">' + siteOpts('jacinto') + '</select></div>'
+        + '<div><label class="f">Needed by *</label><input class="in" type="date" name="needed_by" value="' + esc(OLD.needed_by || TMR) + '" required></div></div>'
+        + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><label class="f" style="margin:0">Products</label><button type="button" class="addrow" onclick="nAdd()">+ Add product</button></div>'
+        + '<div id="nrw"></div><label class="f" style="margin-top:6px">Notes</label><input class="in" type="text" name="notes" maxlength="500" value="' + esc(OLD.notes || '') + '" placeholder="e.g. ordered via Messenger">'
+        + '<div class="ber" id="err"></div>'
+        + foot('<button type="button" class="btn btn-gold" onclick="nSave()">Save order</button>') + '</form>');
+    nDraw();
+}
+function nDraw(){
+    $('#nrw').innerHTML = N.rows.map((r, i) =>
+        '<div class="brw"><div style="flex:1;min-width:0"><select class="in" name="items[' + i + '][product_id]" onchange="N.rows[' + i + '].pid=this.value" aria-label="Product"><option value="">Select a product</option>'
+        + PRODUCTS.map(p => '<option value="' + p.id + '"' + (r.pid == p.id ? ' selected' : '') + '>' + esc(p.name) + '</option>').join('') + '</select></div>'
+        + '<input class="in q" type="number" min="1" name="items[' + i + '][qty]" value="' + esc(r.qty) + '" oninput="N.rows[' + i + '].qty=this.value" aria-label="Quantity">'
+        + '<button type="button" class="bx" onclick="N.rows.splice(' + i + ',1);nDraw()" aria-label="Remove row">&times;</button></div>').join('');
+}
+function nAdd(){ N.rows.push({pid:'', qty:1}); nDraw(); }
+function nSave(){
+    const rs = N.rows.filter(r => r.pid && +r.qty >= 1);
+    if(!rs.length) return er('Add at least one product with a quantity.');
+    N.rows = rs; nDraw(); $('#bf').submit();
+}
+
+/* ---------- Print / Save PDF ---------- */
+function doPrint(t){ const old = document.title; document.title = t; window.print(); setTimeout(function(){ document.title = old; }, 800); }
+const pfoot = t => '<div class="bmf"><button type="button" class="btn btn-outline" onclick="closeM()">Close</button><button type="button" class="btn btn-gold" onclick="doPrint(\'' + t + '\')">' + PRINT_ICON + ' Print / Save PDF</button></div>';
+
+function printOrder(id) {
+    const o = SLIPS.find(x => x.id == id);
+    if (!o) return;
+
+    let h = '<div id="slipArea" class="slip">'
+        + '<h4>Order #' + o.id + ' Â· Jacinto Branch</h4>'
+        + '<div class="muted">From Matina Commissary Â· printed ' + TODAY_LBL + '</div>'
+        + '<div class="mt">'
+        + '<span>Needed by: <b>' + esc(o.need) + '</b></span>'
+        + '<span>Status: <b>' + esc(o.st) + '</b></span>'
+        + '<span><b>' + o.bal + ' pcs remaining</b></span>'
+        + '</div>'
+        + '<h4 style="font-size:14px;margin:16px 0 0">Order summary</h4>'
+        + '<table><thead><tr>'
+        + '<th class="l">Product</th><th>Ordered</th><th>Sent</th><th>Remaining</th>'
+        + '</tr></thead><tbody>'
+        + o.items.map(i =>
+            '<tr><td class="l">' + esc(i.n) + '</td><td>' + i.q + '</td>'
+            + '<td>' + i.d + '</td><td><b>' + i.bl + '</b></td></tr>'
+        ).join('')
+        + '<tr><td class="l"><b>Total</b></td><td><b>' + o.ord + '</b></td>'
+        + '<td><b>' + o.sent + '</b></td><td><b>' + o.bal + '</b></td></tr>'
+        + '</tbody></table>';
+
+    if (o.bal > 0 && o.sent > 0 && o.st === 'Pending') {
+        h += '<p><b>Remaining to deliver: ' + o.bal
+            + ' pcs.</b> These remain outstanding for the next batch.</p>';
+    }
+    if (o.closed > 0) {
+        h += '<p><b>Closed short: ' + o.closed + ' pcs</b>'
+            + (o.why ? ' â€” ' + esc(o.why) : '') + '</p>';
+    }
+    if (o.note) {
+        h += '<p class="muted">Note: ' + esc(o.note) + '</p>';
+    }
+
+    if (o.dl.length) {
+        h += '<h4 style="font-size:14px;margin:16px 0 0">Delivery history</h4>';
+        o.dl.forEach(d => {
+            h += '<p><b>Delivery date: ' + esc(d.d) + '</b></p>'
+                + '<table><thead><tr>'
+                + '<th class="l">Product</th><th>Qty sent</th><th>Returned</th>'
+                + '<th>Net qty</th><th>Unit price</th><th>Amount</th>'
+                + '</tr></thead><tbody>'
+                + d.items.map(i =>
+                    '<tr><td class="l">' + esc(i.n) + '</td>'
+                    + '<td>' + i.q + '</td><td>' + i.ret + '</td>'
+                    + '<td>' + i.net + '</td><td>' + peso(i.pr) + '</td>'
+                    + '<td>' + peso(i.amt) + '</td></tr>'
+                ).join('')
+                + '<tr><td class="l" colspan="5"><b>Delivery total</b></td>'
+                + '<td><b>' + peso(d.amt) + '</b></td></tr>'
+                + '</tbody></table>';
+        });
+        h += '<p><b>Total net delivery value: ' + peso(o.rev) + '</b></p>';
+    } else {
+        h += '<p>No delivery batches recorded for this order yet.</p>';
+    }
+
+    h += '<div class="bsg">'
+        + '<span>Prepared by: __________________</span>'
+        + '<span>Received by (Jacinto): __________________</span>'
+        + '</div></div>';
+
+    modal('Order slip', h + pfoot('Order-' + id));
+}
+function printPending(){
+    const ps = SLIPS.filter(o => o.st === 'Pending' && o.bal > 0).sort((a, b) => a.raw < b.raw ? -1 : 1);
+    if(!ps.length){ alert('No pending orders to print.'); return; }
+    const tot = {};
+    ps.forEach(o => o.items.forEach(i => { if(i.bl) tot[i.n] = (tot[i.n] || 0) + i.bl; }));
+    const ks = Object.keys(tot);
+    let h = '<div id="slipArea" class="slip"><h4>Pending orders \u00b7 Jacinto Branch</h4><div class="muted">Not yet sent as of ' + TODAY_LBL + '</div>'
+        + '<div class="mt"><span><b>' + ps.length + '</b> pending order' + (ps.length == 1 ? '' : 's') + '</span><span class="bpb">' + ks.reduce((a, k) => a + tot[k], 0) + ' pcs to send</span></div>'
+        + '<table><thead><tr><th class="l">Needed by</th><th class="l">Order</th><th class="l">Product</th><th>Ordered</th><th>Sent</th><th>Not yet sent</th></tr></thead><tbody>'
+        + ps.map(o => o.items.filter(i => i.bl > 0).map((i, k) => '<tr><td class="l">' + (k ? '' : esc(o.need)) + '</td><td class="l">' + (k ? '' : '#' + o.id) + '</td><td class="l">' + esc(i.n) + '</td><td>' + i.q + '</td><td>' + i.d + '</td><td><b>' + i.bl + '</b></td></tr>').join('')).join('')
+        + '</tbody></table><h4 style="font-size:14px;margin:16px 0 0">Total to prepare</h4><table><tbody>'
+        + ks.map(k => '<tr><td class="l">' + esc(k) + '</td><td><b>' + tot[k] + ' pcs</b></td></tr>').join('') + '</tbody></table></div>';
+    modal('Pending orders', h + pfoot('Pending-orders'));
+}
+
+/* ---------- Reopen the right modal after a server validation error ---------- */
+(function(){
+    if(!OLD || !OLD.items) return;
+    const rows = Object.values(OLD.items); if(!rows.length) return;
+    if('qty_sent' in rows[0]) openSend(OLD.branch_order_id || '', rows.map(r => ({pid: String(r.product_id || ''), qty: r.qty_sent, pr: r.unit_price})));
+    else if('qty' in rows[0]) openNew(rows.map(r => ({pid: String(r.product_id || ''), qty: r.qty})));
+})();
+</script>
 </x-app-layout>

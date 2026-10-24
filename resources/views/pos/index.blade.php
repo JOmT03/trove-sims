@@ -3,7 +3,9 @@
 <x-slot name="subheader">Counter sale &mdash; walk-in</x-slot>
 
 @php
-    $cats = $products->pluck("category")->filter()->unique()->sort()->values();
+    $grouped = $products->groupBy(function ($p) { return $p->category ?: 'Uncategorized'; });
+    $grouped = $grouped->sortBy(function ($items, $k) { return $k === 'Uncategorized' ? 'zzzz' : strtolower($k); });
+    $cats = $grouped->keys()->values();
 @endphp
 
 <style>
@@ -12,21 +14,31 @@
 .pos-alert{padding:12px 16px;border-radius:9px;margin-bottom:14px;font-size:13px;}
 .pos-alert.ok{background:#E7F3EA;border:1px solid #bbf7d0;color:#166534;}
 .pos-alert.err{background:#FBE4DA;border:1px solid #fecaca;color:#991b1b;}
-.pos-bar{display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap;}
+.pos-bar{display:flex;gap:10px;margin-bottom:12px;flex-wrap:wrap;}
 .pos-search{flex:1;min-width:180px;position:relative;}
 .pos-search svg{position:absolute;left:14px;top:50%;transform:translateY(-50%);width:17px;height:17px;stroke:var(--muted);fill:none;}
 .pos-search input{width:100%;padding:11px 14px 11px 40px;border:1px solid var(--border);border-radius:999px;font-size:14px;background:var(--white);color:var(--text);font-family:var(--f-body);}
 .pos-search input:focus{outline:none;border-color:var(--gold);box-shadow:0 0 0 3px rgba(217,120,44,.14);}
-.pos-cat{padding:10px 14px;border:1px solid var(--border);border-radius:999px;font-size:13px;background:var(--white);color:var(--text);font-family:var(--f-body);cursor:pointer;}
-.pos-cat:focus{outline:none;border-color:var(--gold);}
-.pos-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;}
-.pcard{background:var(--white);border:1px solid var(--border);border-radius:14px;padding:14px;text-align:left;cursor:pointer;font-family:var(--f-body);box-shadow:0 1px 6px rgba(74,44,23,.06);transition:transform .12s ease,box-shadow .12s ease,border-color .12s ease;}
+.pchips{display:flex;gap:9px;flex-wrap:wrap;margin-bottom:6px;}
+.pchip{border:1px solid var(--border);background:var(--white);color:var(--muted);border-radius:999px;padding:8px 18px;font-size:13px;font-weight:600;cursor:pointer;font-family:var(--f-body);}
+.pchip.active{background:var(--gold);color:#fff;border-color:var(--gold);}
+.cat-sec{margin-top:20px;}
+.cat-head{display:flex;align-items:center;gap:12px;margin-bottom:12px;}
+.cat-head h2{font-family:var(--f-display);font-weight:800;font-size:16px;color:#4A2C17;margin:0;white-space:nowrap;}
+.cat-head .count{font-size:11px;font-weight:700;color:#B5651D;background:#F3DCC4;padding:3px 10px;border-radius:999px;}
+.cat-head .line{flex:1;height:1px;background:var(--border);}
+.pos-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;}
+.pcard{background:var(--white);border:1px solid var(--border);border-radius:14px;padding:0;overflow:hidden;display:flex;flex-direction:column;text-align:left;cursor:pointer;font-family:var(--f-body);box-shadow:0 1px 6px rgba(74,44,23,.06);transition:transform .12s ease,box-shadow .12s ease,border-color .12s ease;}
 .pcard:hover:not(.out){transform:translateY(-2px);box-shadow:0 6px 16px rgba(74,44,23,.12);border-color:var(--gold);}
+.pcard .pph{height:96px;width:100%;background:linear-gradient(135deg,#F3DCC4,#E8C07A);display:flex;align-items:center;justify-content:center;overflow:hidden;}
+.pcard .pph img{width:100%;height:100%;object-fit:cover;display:block;}
+.pcard .pemo{font-size:34px;}
+.pcard .pb{padding:11px 13px 13px;}
 .pcard .pn{font-weight:700;color:var(--text);font-size:13.5px;line-height:1.3;}
-.pcard .pc{color:var(--gold);font-size:11px;margin-top:3px;}
-.pcard .pp{font-family:var(--f-display);font-weight:800;font-size:19px;margin-top:9px;letter-spacing:-.5px;}
+.pcard .pp{font-family:var(--f-display);font-weight:800;font-size:19px;margin-top:7px;letter-spacing:-.5px;}
 .pcard .ps{font-size:11px;color:var(--muted);margin-top:3px;}
-.pcard.out{opacity:.5;cursor:not-allowed;}
+.pcard.out{opacity:.55;cursor:not-allowed;}
+.pcard.out .pph img{filter:grayscale(1);}
 .pcard.out .ps{color:#C2410C;font-weight:700;}
 .pos-none{display:none;text-align:center;color:var(--muted);padding:34px;font-size:14px;}
 
@@ -90,27 +102,43 @@
         <svg stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-4.35-4.35M17 11a6 6 0 11-12 0 6 6 0 0112 0z"/></svg>
         <input type="text" id="posSearch" placeholder="Search products..." oninput="posFilter()">
       </div>
-      <select id="posCat" class="pos-cat" onchange="posFilter()">
-        <option value="">All Categories</option>
-        @foreach($cats as $c)<option value="{{ $c }}">{{ $c }}</option>@endforeach
-      </select>
     </div>
 
-    <div class="pos-grid" id="posGrid">
-      @foreach($products as $p)
-        <button type="button"
-          class="pcard {{ (float)$p->stock_quantity <= 0 ? 'out' : '' }}"
-          data-id="{{ $p->id }}"
-          data-name="{{ $p->product_name }}"
-          data-price="{{ $p->price }}"
-          data-stock="{{ (int)$p->stock_quantity }}"
-          data-cat="{{ $p->category }}"
-          @if((float)$p->stock_quantity > 0) onclick="posAdd(this)" @else disabled @endif>
-          <div class="pn">{{ $p->product_name }}</div>
-          @if($p->category)<div class="pc">{{ $p->category }}</div>@endif
-          <div class="pp">&#8369;{{ number_format($p->price, 2) }}</div>
-          <div class="ps">{{ (float)$p->stock_quantity <= 0 ? 'Out of stock' : $p->stock_quantity.' in stock' }}</div>
-        </button>
+    <div class="pchips" id="posChips">
+      <button type="button" class="pchip active" data-cat="" onclick="posSetCat(this)">All</button>
+      @foreach($cats as $c)<button type="button" class="pchip" data-cat="{{ $c }}" onclick="posSetCat(this)">{{ $c }}</button>@endforeach
+    </div>
+
+    <div id="posSections">
+      @foreach($grouped as $catName => $items)
+        <div class="cat-sec" data-cat="{{ $catName }}">
+          <div class="cat-head"><h2>{{ $catName }}</h2><span class="count">{{ $items->count() }}</span><span class="line"></span></div>
+          <div class="pos-grid">
+            @foreach($items as $p)
+              <button type="button"
+                class="pcard {{ (float)$p->stock_quantity <= 0 ? 'out' : '' }}"
+                data-id="{{ $p->id }}"
+                data-name="{{ $p->product_name }}"
+                data-price="{{ $p->price }}"
+                data-stock="{{ (int)$p->stock_quantity }}"
+                data-cat="{{ $catName }}"
+                @if((float)$p->stock_quantity > 0) onclick="posAdd(this)" @else disabled @endif>
+                <div class="pph">
+                  @if($p->image_path)
+                    <img src="{{ asset('storage/'.$p->image_path) }}" alt="{{ $p->product_name }}" loading="lazy">
+                  @else
+                    <span class="pemo">&#127856;</span>
+                  @endif
+                </div>
+                <div class="pb">
+                  <div class="pn">{{ $p->product_name }}</div>
+                  <div class="pp">&#8369;{{ number_format($p->price, 2) }}</div>
+                  <div class="ps">{{ (float)$p->stock_quantity <= 0 ? 'Out of stock' : $p->stock_quantity.' in stock' }}</div>
+                </div>
+              </button>
+            @endforeach
+          </div>
+        </div>
       @endforeach
     </div>
     <div class="pos-none" id="posNone">No products match your search.</div>
@@ -152,7 +180,7 @@
         <div class="mtotal"><span class="l">Amount due</span><span class="v" id="payDue">&#8369;0.00</span></div>
 
         <div class="prow">
-          <div class="pl"><label>Cash</label><input type="number" step="0.01" min="0" id="cashAmt" placeholder="0.00" oninput="posRecalc()"></div>
+          <div class="pl"><label>Cash</label><div style="display:flex;gap:8px;align-items:center;"><input type="number" step="0.01" min="0" id="cashAmt" placeholder="0.00" oninput="posRecalc()" style="flex:1;"><button type="button" onclick="posExact()" style="padding:9px 14px;border:1px solid #D9782C;background:#FBF2E6;color:#8A3B0F;border-radius:9px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap;">Exact</button></div></div>
         </div>
 
         <div class="prow">
@@ -187,6 +215,7 @@
 
 <script>
 const cart = new Map(); // id -> {id,name,price,stock,qty}
+var posCurCat = "";
 
 function peso(n){ return "\u20B1" + Number(n).toLocaleString("en-PH",{minimumFractionDigits:2,maximumFractionDigits:2}); }
 function cartTotal(){ let t=0; cart.forEach(i=> t += i.price*i.qty); return Math.round(t*100)/100; }
@@ -232,14 +261,24 @@ function renderCart(){
   document.getElementById("chargeBtn").disabled = cart.size === 0;
 }
 
+function posSetCat(btn){
+  document.querySelectorAll("#posChips .pchip").forEach(c=>c.classList.remove("active"));
+  btn.classList.add("active");
+  posCurCat = btn.dataset.cat || "";
+  posFilter();
+}
 function posFilter(){
-  const q = document.getElementById("posSearch").value.toLowerCase();
-  const cat = document.getElementById("posCat").value;
+  const q = document.getElementById("posSearch").value.toLowerCase().trim();
   let shown = 0;
-  document.querySelectorAll("#posGrid .pcard").forEach(c=>{
-    const okq = c.dataset.name.toLowerCase().includes(q);
-    const okc = !cat || c.dataset.cat === cat;
-    const show = okq && okc; c.style.display = show ? "" : "none"; if(show) shown++;
+  document.querySelectorAll("#posSections .cat-sec").forEach(sec=>{
+    const catOk = !posCurCat || sec.dataset.cat === posCurCat;
+    let n = 0;
+    sec.querySelectorAll(".pcard").forEach(c=>{
+      const show = catOk && c.dataset.name.toLowerCase().includes(q);
+      c.style.display = show ? "" : "none";
+      if (show) { n++; shown++; }
+    });
+    sec.style.display = n ? "" : "none";
   });
   document.getElementById("posNone").style.display = shown ? "none" : "block";
 }
@@ -256,6 +295,15 @@ function posOpenPay(){
   document.getElementById("payBg").classList.add("show");
 }
 function posClosePay(){ document.getElementById("payBg").classList.remove("show"); }
+
+function posExact(){
+  const total  = cartTotal();
+  const method = document.getElementById("onlineMethod").value;
+  const oAmt   = method ? (parseFloat(document.getElementById("onlineAmt").value) || 0) : 0;
+  const due    = Math.max(0, Math.round((total - oAmt) * 100) / 100);
+  document.getElementById("cashAmt").value = due.toFixed(2);
+  posRecalc();
+}
 
 function posRecalc(){
   const total  = cartTotal();

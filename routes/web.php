@@ -166,3 +166,27 @@ Route::middleware(['auth', 'admin'])->group(function () {
     Route::get('/settings/shop', [\App\Http\Controllers\ShopSettingsController::class, 'edit'])->name('settings.shop');
     Route::post('/settings/shop', [\App\Http\Controllers\ShopSettingsController::class, 'update'])->name('settings.shop.update');
 });
+// Production Capacity (producible units from current stock + recipe)
+Route::get('inventory/capacity', [\App\Http\Controllers\ProductionCapacityController::class, 'index'])
+    ->middleware(['auth'])
+    ->name('inventory.capacity');
+
+// Production with audit (anti-tikas)
+Route::get('production', [\App\Http\Controllers\ProductionController::class, 'create'])->middleware(['auth'])->name('production.create');
+Route::post('production', [\App\Http\Controllers\ProductionController::class, 'store'])->middleware(['auth'])->name('production.store');
+Route::get('production/audit', [\App\Http\Controllers\ProductionController::class, 'audit'])->middleware(['auth'])->name('production.audit');
+
+
+// ---- Branch orders + void (final-sale branch transfers) ----
+Route::middleware(['auth'])->group(function () {
+    Route::get('/branch-orders', [\App\Http\Controllers\BranchOrderController::class, 'index'])->name('branch-orders.index');
+    Route::post('/branch-orders', [\App\Http\Controllers\BranchOrderController::class, 'store'])->name('branch-orders.store');
+    Route::post('/branch-orders/{order}/produce', [\App\Http\Controllers\BranchOrderController::class, 'produce'])->name('branch-orders.produce');
+    Route::post('/branch-orders/{order}/cancel', [\App\Http\Controllers\BranchOrderController::class, 'cancel'])->name('branch-orders.cancel');
+    Route::post('/branch-transfers/{batch}/void', [\App\Http\Controllers\BranchTransferController::class, 'void'])->name('branch-transfers.void');
+});
+
+// ---- Branch orders: close short ----
+Route::middleware(['auth'])->group(function () {
+    Route::post('/branch-orders/{order}/close-short', [\App\Http\Controllers\BranchOrderController::class, 'closeShort'])->name('branch-orders.close-short');
+});
