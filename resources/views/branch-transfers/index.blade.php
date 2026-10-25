@@ -27,14 +27,45 @@ label.f{display:block;font-size:13px;font-weight:700;color:#374151;margin-bottom
 .in{width:100%;padding:9px 12px;border:1.5px solid #e2e8f0;border-radius:9px;font-size:14px;background:#fff;}
 .addrow{padding:7px 12px;border:1.5px dashed #EDE0D0;border-radius:9px;background:#fff;color:#8A7460;font-size:12.5px;font-weight:600;cursor:pointer;}
 .rm{background:none;border:none;color:#ef4444;cursor:pointer;font-size:15px;}
-details.more{display:inline-block;vertical-align:top;margin-left:4px;text-align:right;}
-details.more summary{cursor:pointer;font-size:12px;color:#8A7460;padding:6px 4px;}
-.more-box{margin-top:6px;display:flex;flex-direction:column;gap:6px;align-items:flex-end;}
-.dl{background:#FFFBF5;border-top:1px dashed #EDE0D0;padding:2px 0;}
-.dline{display:flex;gap:18px;align-items:center;padding:7px 14px 7px 40px;font-size:12.5px;border-top:1px dashed #F3E9DB;}
-.dline:first-child{border-top:none;}
-.dline .d{width:105px;color:#374151;} .dline .q{width:70px;} .dline .r{width:110px;font-weight:700;}
-.dline a{margin-left:auto;font-weight:700;color:#2E1C10;text-decoration:none;}
+.twrap{overflow-x:auto;}
+table.tbl{table-layout:fixed;min-width:900px;}
+.tbl td{vertical-align:middle;}
+th.st,td.st{text-align:center;} th.ac,td.ac{text-align:right;}
+.act{display:flex;gap:6px;justify-content:flex-end;align-items:center;}
+.drow td{background:#FFFBF5;border-top:1px dashed #F3E9DB;padding-top:8px;padding-bottom:8px;font-size:12.5px;}
+.drow td:first-child{white-space:nowrap;}
+.drow .arrow{color:#B9A895;margin-left:2px;}
+details.km{display:inline-block;}
+details.km summary{list-style:none;}
+details.km summary::-webkit-details-marker{display:none;}
+.kbtn{display:inline-flex;align-items:center;justify-content:center;width:32px;height:28px;border:1px solid #EDE0D0;border-radius:8px;color:#8A7460;cursor:pointer;font-size:15px;background:#fff;}
+details.km[open] .kbtn,.kbtn:hover{background:#FDF6EC;color:#2E1C10;}
+.kmenu{display:none;position:fixed;z-index:50;background:#fff;border:1px solid #EDE0D0;border-radius:10px;box-shadow:0 10px 30px rgba(46,28,16,.18);padding:4px;min-width:240px;text-align:left;}
+details.km[open] .kmenu{display:block;}
+.kmenu form{margin:0;}
+.mi{display:block;width:100%;text-align:left;background:none;border:0;padding:8px 10px;border-radius:7px;font-size:12.5px;font-weight:600;color:#2E1C10;cursor:pointer;font-family:inherit;}
+.mi:hover{background:#FDF6EC;} .mi.bad{color:#B91C1C;}
+.mi:disabled{color:#B9A895;cursor:not-allowed;background:none;}
+.mi small{display:block;font-weight:500;color:#B9A895;font-size:11px;}
+.mform{display:flex;gap:6px;padding:6px;} .mform .btn{white-space:nowrap;} .mform .in{padding:6px 8px;font-size:12px;}
+.tabs{display:flex;gap:4px;background:#F4EEE7;padding:3px;border-radius:999px;}
+.tabs a{padding:6px 12px;border-radius:999px;font-size:12px;font-weight:700;color:#8A7460;text-decoration:none;}
+.tabs a.on{background:#fff;color:#2E1C10;box-shadow:0 1px 4px rgba(0,0,0,.08);}
+.tabs a span{color:#B9A895;margin-left:3px;}
+details.folder{border-top:1px solid #EDE0D0;}
+details.folder summary{list-style:none;display:flex;align-items:center;gap:12px;padding:12px 16px;cursor:pointer;}
+details.folder summary::-webkit-details-marker{display:none;}
+details.folder summary:hover{background:#FDF6EC;}
+.fic{width:22px;height:16px;background:#D9782C;border-radius:2px 4px 4px 4px;position:relative;flex:none;margin-top:4px;}
+.fic::before{content:"";position:absolute;left:0;top:-4px;width:10px;height:5px;background:#D9782C;border-radius:3px 3px 0 0;}
+.ft1{font-weight:800;font-size:14px;color:#2E1C10;} .ft2{font-size:12px;color:#8A7460;font-variant-numeric:tabular-nums;}
+.fright{margin-left:auto;display:flex;align-items:center;gap:10px;}
+.chev{color:#8A7460;transition:transform .15s;} details.folder[open] .chev{transform:rotate(90deg);}
+details.folder .tbl tr:first-child td{border-top:1px dashed #EDE0D0;}
+.seg2{display:flex;gap:4px;background:#F4EEE7;padding:3px;border-radius:9px;margin-bottom:12px;}
+.seg2 button{flex:1;border:0;background:none;padding:7px;border-radius:7px;font-weight:700;font-size:12.5px;color:#8A7460;cursor:pointer;}
+.seg2 button.on{background:#fff;color:#2E1C10;box-shadow:0 1px 4px rgba(0,0,0,.08);}
+.prev{margin-top:12px;background:#FDF6EC;border-radius:10px;padding:10px 12px;font-size:12.5px;}
 .sm2{display:flex;gap:22px;flex-wrap:wrap;padding:10px 18px;background:#FDF6EC;border-bottom:1px solid #EDE0D0;font-size:13px;}
 .bov{position:fixed;inset:0;background:rgba(46,28,16,.45);display:none;align-items:center;justify-content:center;padding:16px;z-index:60;}
 .bov.on{display:flex;}
@@ -57,6 +88,16 @@ details.more summary{cursor:pointer;font-size:12px;color:#8A7460;padding:6px 4px
 .slip .mt{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:10px 0;align-items:center;}
 .bpb{border:2px solid #C2410C;color:#C2410C;padding:2px 10px;border-radius:6px;font-weight:700;}
 .bsg{display:flex;gap:40px;margin-top:34px;font-size:12px;} .bsg span{flex:1;border-top:1px solid #8A7460;padding-top:4px;color:#8A7460;}
+.bmh .ha{display:flex;gap:6px;align-items:center;}
+.btabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;}
+.btab{padding:6px 12px;border-radius:999px;border:1px solid #EDE0D0;background:#fff;color:#8A7460;font-size:12px;font-weight:700;cursor:pointer;}
+.btab.on{background:#2E1C10;border-color:#2E1C10;color:#fff;}
+.slip .shop{font-size:12px;font-weight:800;letter-spacing:.6px;text-transform:uppercase;color:#D9782C;margin-bottom:6px;}
+.slip table{margin-top:8px;} .slip tr.tot td{font-weight:800;background:#FDF6EC;}
+.nys{border:2px solid #C2410C;border-radius:10px;padding:10px 14px;margin-top:16px;color:#7C2D12;}
+.nys b.h{display:block;color:#C2410C;font-size:13px;letter-spacing:.5px;margin-bottom:4px;}
+.vdb{background:#f3f4f6;color:#374151;border-radius:9px;padding:9px 12px;margin:10px 0;font-size:13px;}
+.bvl{display:block;margin-top:14px;font-size:12px;color:#8A7460;text-align:right;}
 @media print{
  body *{visibility:hidden!important;}
  #slipArea,#slipArea *{visibility:visible!important;}
@@ -68,9 +109,20 @@ details.more summary{cursor:pointer;font-size:12px;color:#8A7460;padding:6px 4px
 @php
     $productData = $products->map(fn($p) => ['id' => $p->id, 'name' => $p->product_name])->values();
     $byOrder = $batches->groupBy('branch_order_id');
-    $shownIds = $orders->pluck('id')->all();
-    $other = $batches->filter(fn($b) => !$b->branch_order_id || !in_array($b->branch_order_id, $shownIds));
     $batchRev = fn($b) => $b->items->sum(fn($i) => ($i->qty_sent - $i->qty_returned) * $i->unit_price);
+    $batches->loadMissing('items.product');
+    $isOpen = fn($o) => in_array($o->status, ['requested','produced','partial']);
+    // Deliveries with no order (or whose order no longer exists), on the current tab
+    $other = $batches->filter(fn($b) => (!$b->branch_order_id || !in_array($b->branch_order_id, $orderIds))
+        && (($tab === 'archived') === !empty($b->archived_at)));
+    $rowDate = fn($r) => $r instanceof \App\Models\Batch ? $r->batch_date : $r->needed_by;
+    $rowRev = fn($r) => $r instanceof \App\Models\Batch ? $batchRev($r)
+        : $byOrder->get($r->id, collect())->filter(fn($b) => empty($b->voided_at))->sum($batchRev);
+    // Open orders first, then finished orders and order-less deliveries, newest first
+    $finished = $orders->reject($isOpen)->concat($other)->sortByDesc(fn($r) => $rowDate($r)->format('Y-m-d'))->values();
+    $feed = $orders->filter($isOpen)->values()->concat($finished);
+    $pendO = $orders->filter($isOpen);
+    $cols = '<colgroup><col style="width:130px"><col><col style="width:78px"><col style="width:66px"><col style="width:78px"><col style="width:118px"><col style="width:104px"><col style="width:132px"></colgroup>';
 @endphp
 
 <div style="max-width:1050px;margin:0 auto;">
@@ -82,139 +134,79 @@ details.more summary{cursor:pointer;font-size:12px;color:#8A7460;padding:6px 4px
 
 <div class="card">
     <div class="card-h">
-        <h3>Orders &amp; Deliveries</h3>
-        <div style="display:flex;gap:8px;">
-            <button type="button" class="btn btn-gold" onclick="printPending()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px"><path d="M6 9V2h12v7M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg> Print pending</button>
+        <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
+            <h3>Orders &amp; Deliveries</h3>
+            <nav class="tabs">
+                <a href="{{ route('branch-transfers.index') }}" class="{{ $tab === 'active' ? 'on' : '' }}">Active <span>{{ $activeCount }}</span></a>
+                <a href="{{ route('branch-transfers.index', ['tab' => 'archived']) }}" class="{{ $tab === 'archived' ? 'on' : '' }}">Archived <span>{{ $archivedCount }}</span></a>
+            </nav>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            @if($tab === 'active')<button type="button" class="btn btn-outline" onclick="openBulk()">Archive a period</button>@endif
             <button type="button" class="btn btn-outline" onclick="openNew()">+ New Order</button>
             <button type="button" class="btn btn-gold" onclick="openSend()">+ Send Batch</button>
         </div>
     </div>
 
-    @php
-    $pendO = $orders->filter(fn($o) => in_array($o->status, ['requested','produced','partial']));
-@endphp
     <div class="sm2">
-        <span><b>{{ $pendO->count() }}</b> pending order{{ $pendO->count() == 1 ? '' : 's' }}</span>
-        <span><b>{{ $pendO->sum('balance_qty') }}</b> pcs not yet sent</span>
-        @if($pendO->count())<span class="muted">Earliest needed: {{ $pendO->sortBy('needed_by')->first()->needed_by->format('M d, Y') }}</span>
-        @else<span class="muted">Everything is sent.</span>@endif
+        @if($tab === 'active')
+            <span><b>{{ $pendO->count() }}</b> pending order{{ $pendO->count() == 1 ? '' : 's' }}</span>
+            <span><b>{{ $pendO->sum('balance_qty') }}</b> pcs not yet sent</span>
+            @if($pendO->count())<span class="muted">Earliest needed: {{ $pendO->sortBy('needed_by')->first()->needed_by->format('M d, Y') }}</span>
+            @else<span class="muted">Everything is sent.</span>@endif
+        @else
+            <span class="muted">Archived orders and deliveries, filed by month. Nothing is deleted, and the sales still count in reports.</span>
+        @endif
     </div>
 
-    <table>
-        <thead><tr><th>Needed By</th><th class="l">Items (sent / ordered)</th><th>Ordered</th><th>Sent</th><th>Balance</th><th>Revenue</th><th>Status</th><th></th></tr></thead>
+    <div class="twrap">
+    <table class="tbl">
+        {!! $cols !!}
+        <thead><tr><th>Date</th><th class="l">Items (sent / ordered)</th><th>Ordered</th><th>Sent</th><th>Balance</th><th>Revenue</th><th class="st">Status</th><th class="ac">Actions</th></tr></thead>
+        @if($tab === 'active')
         <tbody>
-        @forelse($orders as $o)
-            @php
-                $isPending = in_array($o->status, ['requested','produced','partial']);
-                if ($o->status === 'complete') { $label = $o->sent_qty > 0 ? 'Sent' : 'Closed'; $cls = $o->sent_qty > 0 ? 'sent' : 'cancelled'; }
-                elseif ($o->status === 'cancelled') { $label = 'Cancelled'; $cls = 'cancelled'; }
-                else { $label = 'Pending'; $cls = ''; }
-                $closedQty = $o->items->sum('qty_closed');
-                $deliv = $byOrder->get($o->id, collect());
-                $orderRev = $deliv->filter(fn($b) => empty($b->voided_at))->sum($batchRev);
-            @endphp
-            <tr>
-                <td>{{ $o->needed_by->format('M d, Y') }}<div class="muted" style="font-size:11px;">#{{ $o->id }}</div></td>
-                <td class="l" style="font-size:12.5px;">
-                    @foreach($o->items as $it){{ $it->product->product_name ?? '?' }} {{ $it->delivered }}/{{ $it->qty }}@if(!$loop->last), @endif @endforeach
-                    @if($o->status === 'produced')<span class="muted"> &middot; produced</span>@endif
-                    @if($isPending && $o->sent_qty > 0 && $o->balance_qty > 0)
-                        <div class="note">Short {{ $o->balance_qty }}: to be delivered in the next batch</div>
-                    @endif
-                    @if($o->status === 'complete' && $o->short_reason)
-                        <div class="note">Closed short {{ $closedQty }}: {{ $o->short_reason }}</div>
-                    @endif
-                    @if($o->notes)<div class="muted" style="font-size:11.5px;">{{ $o->notes }}</div>@endif
-                </td>
-                <td>{{ $o->ordered_qty }}</td>
-                <td>{{ $o->sent_qty }}</td>
-                <td>
-                    @if($isPending)<span class="{{ $o->sent_qty > 0 && $o->balance_qty > 0 ? 'neg' : '' }}">{{ $o->balance_qty }}</span>
-                    @else<span class="muted">&mdash;</span>@endif
-                </td>
-                <td style="font-weight:700;">{!! $orderRev > 0 ? '&#8369;'.number_format($orderRev,2) : '<span class="muted">&mdash;</span>' !!}</td>
-                <td><span class="badge {{ $cls }}">{{ $label }}</span></td>
-                <td style="white-space:nowrap;"><button type="button" class="btn btn-outline sm" onclick="printOrder({{ $o->id }})">Print</button> 
-                    @if($isPending)
-                        <button type="button" class="btn btn-green sm" onclick="openSend({{ $o->id }})">Send</button>
-                        @if($o->status === 'requested')
-                        <form method="POST" action="{{ route('branch-orders.produce', $o) }}" style="display:inline;">@csrf<button class="btn btn-outline sm">Produced</button></form>
-                        @endif
-                        <details class="more">
-                            <summary>More</summary>
-                            <div class="more-box">
-                                @if($o->sent_qty > 0 && $o->balance_qty > 0)
-                                <form method="POST" action="{{ route('branch-orders.close-short', $o) }}" onsubmit="return confirm('Close this order? The {{ $o->balance_qty }} pcs balance will NOT be delivered or sold.');" style="display:flex;gap:6px;">
-                                    @csrf
-                                    <input type="text" name="reason" class="in" style="width:150px;padding:6px 8px;font-size:12px;" placeholder="Reason" required minlength="3" maxlength="500">
-                                    <button class="btn btn-red sm">Close short</button>
-                                </form>
-                                @endif
-                                @if($o->sent_qty == 0)
-                                <form method="POST" action="{{ route('branch-orders.cancel', $o) }}" onsubmit="return confirm('Cancel this order?');">@csrf<button class="btn btn-red sm">Cancel order</button></form>
-                                @endif
-                            </div>
-                        </details>
-                    @endif
-                </td>
-            </tr>
-            @if($deliv->count())
-            <tr>
-                <td colspan="8" style="padding:0;border-top:none;text-align:left;">
-                    <div class="dl">
-                        @foreach($deliv as $b)
-                            @php $v = !empty($b->voided_at); @endphp
-                            <div class="dline">
-                                <span class="d">&#8627; {{ $b->batch_date->format('M d, Y') }}</span>
-                                <span class="q {{ $v ? 'strike' : '' }}">{{ $b->items->sum('qty_sent') }} pcs</span>
-                                <span class="r {{ $v ? 'strike' : '' }}">&#8369;{{ number_format($batchRev($b),2) }}</span>
-                                <span class="badge {{ $v ? 'voided' : 'sent' }}">{{ $v ? 'Voided' : 'Sent' }}</span>
-                                <a href="{{ route('branch-transfers.show', $b) }}">View &rarr;</a>
-                            </div>
-                        @endforeach
-                    </div>
-                </td>
-            </tr>
-            @endif
+        @forelse($feed as $o)
+            @include('branch-transfers._row', ['o' => $o])
         @empty
             <tr><td colspan="8" class="l" style="color:#8A7460;">No orders yet. Click + New Order.</td></tr>
         @endforelse
         </tbody>
+        @endif
     </table>
+    </div>
+
+    @if($tab === 'archived')
+        @forelse($finished->groupBy(fn($r) => $rowDate($r)->format('Y-m')) as $ym => $rows)
+        @php $mLabel = \Carbon\Carbon::createFromFormat('Y-m-d', $ym . '-01')->format('F Y'); @endphp
+        <details class="folder" {{ $loop->first ? 'open' : '' }}>
+            <summary>
+                <span class="fic" aria-hidden="true"></span>
+                <span><span class="ft1">{{ $mLabel }}</span><br><span class="ft2">{{ $rows->count() }} item{{ $rows->count() == 1 ? '' : 's' }} &middot; &#8369;{{ number_format($rows->sum($rowRev), 2) }}</span></span>
+                <span class="fright">
+                    <form method="POST" action="{{ route('branch-transfers.restore-month') }}" onsubmit="return confirm('Restore everything in {{ $mLabel }} to Active?');" style="margin:0;">
+                        @csrf<input type="hidden" name="key" value="{{ $ym }}">
+                        <button class="btn btn-outline sm" onclick="event.stopPropagation()">Restore all</button>
+                    </form>
+                    <span class="chev">&#9654;</span>
+                </span>
+            </summary>
+            <div class="twrap"><table class="tbl">{!! $cols !!}<tbody>
+                @foreach($rows as $o)
+                    @include('branch-transfers._row', ['o' => $o])
+                @endforeach
+            </tbody></table></div>
+        </details>
+        @empty
+        <div style="padding:30px 18px;text-align:center;color:#8A7460;">Nothing archived yet. Use &#8943; &rarr; Archive on a finished order or delivery, or Archive a period.</div>
+        @endforelse
+    @endif
 </div>
 
-@if($other->count())
-<div class="card">
-    <div class="card-h"><h3>Other deliveries (no order)</h3></div>
-    <table>
-        <thead><tr><th>Date</th><th class="l">Route</th><th>Order</th><th>Sent</th><th>Returned</th><th>Revenue</th><th>Status</th><th></th></tr></thead>
-        <tbody>
-        @foreach($other as $b)
-            @php
-                $sent = $b->items->sum('qty_sent');
-                $ret  = $b->items->sum('qty_returned');
-                $isVoid = !empty($b->voided_at);
-            @endphp
-            <tr>
-                <td>{{ $b->batch_date->format('M d, Y') }}</td>
-                <td class="l">{{ $b->sourceSite->site_name ?? 'Matina' }} &rarr; {{ $b->destinationSite->site_name ?? 'Jacinto' }}</td>
-                <td>{!! $b->branch_order_id ? '#'.$b->branch_order_id : '<span class="muted">&mdash;</span>' !!}</td>
-                <td class="{{ $isVoid ? 'strike' : '' }}">{{ $sent }}</td>
-                <td>{!! $ret > 0 ? '<span class="neg">'.$ret.'</span>' : '<span class="muted">&mdash;</span>' !!}</td>
-                <td class="{{ $isVoid ? 'strike' : '' }}" style="font-weight:700;">&#8369;{{ number_format($batchRev($b),2) }}</td>
-                <td><span class="badge {{ $isVoid ? 'voided' : 'sent' }}">{{ $isVoid ? 'Voided' : 'Sent' }}</span></td>
-                <td><a href="{{ route('branch-transfers.show', $b) }}" style="font-weight:700;color:#2E1C10;text-decoration:none;">View &rarr;</a></td>
-            </tr>
-        @endforeach
-        </tbody>
-    </table>
-</div>
-@endif
 </div>
 
 <div id="bov" class="bov" role="dialog" aria-modal="true" aria-labelledby="bmt">
     <div class="bmd">
-        <div class="bmh"><h3 id="bmt"></h3><button type="button" class="bx" onclick="closeM()" aria-label="Close">&times;</button></div>
+        <div class="bmh"><h3 id="bmt"></h3><div class="ha"><button type="button" class="btn btn-gold sm" id="bpr" style="display:none" onclick="doPrint()"></button><button type="button" class="bx" onclick="closeM()" aria-label="Close">&times;</button></div></div>
         <div class="bmb" id="bmb"></div>
     </div>
 </div>
@@ -240,7 +232,7 @@ details.more summary{cursor:pointer;font-size:12px;color:#8A7460;padding:6px 4px
             'id' => (int) $o->id,
             'raw' => $o->needed_by->format('Y-m-d'),
             'need' => $o->needed_by->format('M d, Y'),
-            // Keep these labels compatible with the existing Print pending filter and order table.
+            // Same labels as the order table.
             'st' => $pend ? 'Pending' : ($o->status === 'complete' ? ($o->sent_qty > 0 ? 'Sent' : 'Closed') : 'Cancelled'),
             'ord' => (int) $o->ordered_qty,
             'sent' => (int) $o->sent_qty,
@@ -270,6 +262,26 @@ details.more summary{cursor:pointer;font-size:12px;color:#8A7460;padding:6px 4px
             ])->values(),
         ];
     })->values();
+    $archivable = $tab === 'active'
+        ? $finished->map(fn($r) => ['raw' => $rowDate($r)->format('Y-m-d'), 'rev' => round($rowRev($r), 2)])->values()
+        : collect();
+    $batchData = $batches->map(fn($b) => [
+        'id' => (int) $b->id,
+        'raw' => $b->batch_date->format('Y-m-d'),
+        'd' => $b->batch_date->format('M d, Y'),
+        'from' => $b->sourceSite->site_name ?? 'Matina',
+        'to' => $b->destinationSite->site_name ?? 'Jacinto',
+        'oid' => $b->branch_order_id ? (int) $b->branch_order_id : null,
+        'void' => !empty($b->voided_at),
+        'why' => $b->void_reason,
+        'items' => $b->items->map(fn($i) => [
+            'n' => $pnames[$i->product_id] ?? '?',
+            'q' => (int) $i->qty_sent,
+            'ret' => (int) $i->qty_returned,
+            'pr' => (float) $i->unit_price,
+            'amt' => round(((int) $i->qty_sent - (int) $i->qty_returned) * (float) $i->unit_price, 2),
+        ])->values(),
+    ])->values();
 @endphp
 
 <script>
@@ -277,6 +289,10 @@ const PRODUCTS = {!! json_encode($sendProducts, $jf) !!};
 const SITES = {!! json_encode($siteData, $jf) !!};
 const OPEN = {!! json_encode($openOrders, $jf) !!};
 const SLIPS = {!! json_encode($slips, $jf) !!};
+const BATCHES = {!! json_encode($batchData, $jf) !!};
+const ARCHIVABLE = {!! json_encode($archivable, $jf) !!};
+const URL_ARCHIVE = "{{ route('branch-transfers.archive') }}", URL_ARCHIVE_PERIOD = "{{ route('branch-transfers.archive-period') }}";
+const URL_SHOW = "{{ route('branch-transfers.show', ['batch' => '__ID__']) }}";
 const OLD = {!! json_encode(old(), $jf) !!};
 const URL_SEND = "{{ route('branch-transfers.store') }}";
 const URL_ORDER = "{{ route('branch-orders.store') }}";
@@ -290,7 +306,12 @@ const peso = n => '\u20B1' + Number(n).toLocaleString('en-US', {minimumFractionD
 const pb = id => PRODUCTS.find(p => p.id == id);
 let S = null, N = null;
 
-function modal(t, h){ $('#bmt').textContent = t; $('#bmb').innerHTML = h; $('#bov').classList.add('on'); setTimeout(function(){ const e = $('#bmb select, #bmb input'); if(e) e.focus(); }, 30); }
+let PT = '';
+function modal(t, h, pt){
+    $('#bmt').textContent = t; $('#bmb').innerHTML = h; $('#bov').classList.add('on');
+    PT = pt || ''; const b = $('#bpr'); b.style.display = PT ? '' : 'none'; b.innerHTML = PRINT_ICON + ' Print / Save PDF';
+    setTimeout(function(){ const e = $('#bmb select, #bmb input'); if(e) e.focus(); }, 30);
+}
 function closeM(){ $('#bov').classList.remove('on'); }
 $('#bov').addEventListener('mousedown', function(e){ if(e.target.id === 'bov') closeM(); });
 document.addEventListener('keydown', function(e){ if(e.key === 'Escape') closeM(); });
@@ -409,89 +430,157 @@ function nSave(){
     N.rows = rs; nDraw(); $('#bf').submit();
 }
 
-/* ---------- Print / Save PDF ---------- */
-function doPrint(t){ const old = document.title; document.title = t; window.print(); setTimeout(function(){ document.title = old; }, 800); }
-const pfoot = t => '<div class="bmf"><button type="button" class="btn btn-outline" onclick="closeM()">Close</button><button type="button" class="btn btn-gold" onclick="doPrint(\'' + t + '\')">' + PRINT_ICON + ' Print / Save PDF</button></div>';
-
-function printOrder(id) {
-    const o = SLIPS.find(x => x.id == id);
-    if (!o) return;
-
-    let h = '<div id="slipArea" class="slip">'
-        + '<h4>Order #' + o.id + ' Â· Jacinto Branch</h4>'
-        + '<div class="muted">From Matina Commissary Â· printed ' + TODAY_LBL + '</div>'
-        + '<div class="mt">'
-        + '<span>Needed by: <b>' + esc(o.need) + '</b></span>'
-        + '<span>Status: <b>' + esc(o.st) + '</b></span>'
-        + '<span><b>' + o.bal + ' pcs remaining</b></span>'
-        + '</div>'
-        + '<h4 style="font-size:14px;margin:16px 0 0">Order summary</h4>'
-        + '<table><thead><tr>'
-        + '<th class="l">Product</th><th>Ordered</th><th>Sent</th><th>Remaining</th>'
-        + '</tr></thead><tbody>'
-        + o.items.map(i =>
-            '<tr><td class="l">' + esc(i.n) + '</td><td>' + i.q + '</td>'
-            + '<td>' + i.d + '</td><td><b>' + i.bl + '</b></td></tr>'
-        ).join('')
-        + '<tr><td class="l"><b>Total</b></td><td><b>' + o.ord + '</b></td>'
-        + '<td><b>' + o.sent + '</b></td><td><b>' + o.bal + '</b></td></tr>'
-        + '</tbody></table>';
-
-    if (o.bal > 0 && o.sent > 0 && o.st === 'Pending') {
-        h += '<p><b>Remaining to deliver: ' + o.bal
-            + ' pcs.</b> These remain outstanding for the next batch.</p>';
-    }
-    if (o.closed > 0) {
-        h += '<p><b>Closed short: ' + o.closed + ' pcs</b>'
-            + (o.why ? ' â€” ' + esc(o.why) : '') + '</p>';
-    }
-    if (o.note) {
-        h += '<p class="muted">Note: ' + esc(o.note) + '</p>';
-    }
-
-    if (o.dl.length) {
-        h += '<h4 style="font-size:14px;margin:16px 0 0">Delivery history</h4>';
-        o.dl.forEach(d => {
-            h += '<p><b>Delivery date: ' + esc(d.d) + '</b></p>'
-                + '<table><thead><tr>'
-                + '<th class="l">Product</th><th>Qty sent</th><th>Returned</th>'
-                + '<th>Net qty</th><th>Unit price</th><th>Amount</th>'
-                + '</tr></thead><tbody>'
-                + d.items.map(i =>
-                    '<tr><td class="l">' + esc(i.n) + '</td>'
-                    + '<td>' + i.q + '</td><td>' + i.ret + '</td>'
-                    + '<td>' + i.net + '</td><td>' + peso(i.pr) + '</td>'
-                    + '<td>' + peso(i.amt) + '</td></tr>'
-                ).join('')
-                + '<tr><td class="l" colspan="5"><b>Delivery total</b></td>'
-                + '<td><b>' + peso(d.amt) + '</b></td></tr>'
-                + '</tbody></table>';
-        });
-        h += '<p><b>Total net delivery value: ' + peso(o.rev) + '</b></p>';
-    } else {
-        h += '<p>No delivery batches recorded for this order yet.</p>';
-    }
-
-    h += '<div class="bsg">'
-        + '<span>Prepared by: __________________</span>'
-        + '<span>Received by (Jacinto): __________________</span>'
-        + '</div></div>';
-
-    modal('Order slip', h + pfoot('Order-' + id));
+/* ---------- View / Print / Save PDF ---------- */
+/* Print only the slip: copy it with the page styles into a hidden frame, so the sidebar and modal never show on paper */
+function doPrint(){
+    const slip = $('#slipArea'); if(!slip) return;
+    const old = $('#bprf'); if(old) old.remove();
+    const f = document.createElement('iframe'); f.id = 'bprf';
+    f.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;';
+    document.body.appendChild(f);
+    const css = Array.from(document.querySelectorAll('link[rel="stylesheet"], style')).map(e => e.outerHTML).join('');
+    const d = f.contentWindow.document;
+    d.open();
+    d.write('<!doctype html><html><head><meta charset="utf-8"><title>' + esc(PT || document.title) + '</title>' + css
+        + '<style>html,body{background:#fff!important;display:block!important;min-height:0!important;margin:0;padding:0;}@page{margin:14mm;}#slipArea{position:static!important;}</style></head><body>' + slip.outerHTML + '</body></html>');
+    d.close();
+    const go = function(){ const t = document.title; document.title = PT || t; f.contentWindow.focus(); f.contentWindow.print(); setTimeout(function(){ document.title = t; }, 800); };
+    if(d.fonts && d.fonts.ready) d.fonts.ready.then(function(){ setTimeout(go, 50); }); else setTimeout(go, 300);
 }
-function printPending(){
-    const ps = SLIPS.filter(o => o.st === 'Pending' && o.bal > 0).sort((a, b) => a.raw < b.raw ? -1 : 1);
-    if(!ps.length){ alert('No pending orders to print.'); return; }
-    const tot = {};
-    ps.forEach(o => o.items.forEach(i => { if(i.bl) tot[i.n] = (tot[i.n] || 0) + i.bl; }));
-    const ks = Object.keys(tot);
-    let h = '<div id="slipArea" class="slip"><h4>Pending orders \u00b7 Jacinto Branch</h4><div class="muted">Not yet sent as of ' + TODAY_LBL + '</div>'
-        + '<div class="mt"><span><b>' + ps.length + '</b> pending order' + (ps.length == 1 ? '' : 's') + '</span><span class="bpb">' + ks.reduce((a, k) => a + tot[k], 0) + ' pcs to send</span></div>'
-        + '<table><thead><tr><th class="l">Needed by</th><th class="l">Order</th><th class="l">Product</th><th>Ordered</th><th>Sent</th><th>Not yet sent</th></tr></thead><tbody>'
-        + ps.map(o => o.items.filter(i => i.bl > 0).map((i, k) => '<tr><td class="l">' + (k ? '' : esc(o.need)) + '</td><td class="l">' + (k ? '' : '#' + o.id) + '</td><td class="l">' + esc(i.n) + '</td><td>' + i.q + '</td><td>' + i.d + '</td><td><b>' + i.bl + '</b></td></tr>').join('')).join('')
-        + '</tbody></table><h4 style="font-size:14px;margin:16px 0 0">Total to prepare</h4><table><tbody>'
-        + ks.map(k => '<tr><td class="l">' + esc(k) + '</td><td><b>' + tot[k] + ' pcs</b></td></tr>').join('') + '</tbody></table></div>';
-    modal('Pending orders', h + pfoot('Pending-orders'));
+const sign = '<div class="bsg"><span>Prepared by</span><span>Received by (Jacinto)</span></div>';
+
+/* Box listing what the order still owes the branch */
+function notYetSent(o){
+    if(!o || o.st !== 'Pending' || o.bal <= 0) return '';
+    return '<div class="nys"><b class="h">NOT YET SENT: ' + o.bal + ' pcs (order #' + o.id + ')</b>'
+        + o.items.filter(i => i.bl > 0).map(i => esc(i.n) + ' \u00d7 ' + i.bl).join(', ')
+        + '<div style="font-size:12px;margin-top:4px">To be delivered in the next batch.</div></div>';
+}
+
+/* Deliveries of one order, oldest first (voided ones included, marked) */
+const orderBatches = oid => BATCHES.filter(b => b.oid == oid).sort((a, b) => a.raw < b.raw ? -1 : a.raw > b.raw ? 1 : a.id - b.id);
+
+function orderHtml(o){
+    let h = '<div id="slipArea" class="slip"><div class="shop">Trove</div>'
+        + '<h4>Order #' + o.id + ' \u00b7 Jacinto Branch</h4>'
+        + '<div class="muted">From Matina Commissary \u00b7 printed ' + TODAY_LBL + '</div>'
+        + '<div class="mt"><span>Needed by: <b>' + esc(o.need) + '</b></span><span>Status: <b>' + esc(o.st) + '</b></span></div>'
+        + '<table><thead><tr><th class="l">Product</th><th>Ordered</th><th>Sent</th><th>Not yet sent</th></tr></thead><tbody>'
+        + o.items.map(i => '<tr><td class="l">' + esc(i.n) + '</td><td>' + i.q + '</td><td>' + i.d + '</td><td><b>' + i.bl + '</b></td></tr>').join('')
+        + '<tr class="tot"><td class="l">Total</td><td>' + o.ord + '</td><td>' + o.sent + '</td><td>' + o.bal + '</td></tr></tbody></table>';
+    if(o.closed > 0) h += '<p><b>Closed short ' + o.closed + ' pcs</b>' + (o.why ? ': ' + esc(o.why) : '') + '</p>';
+    if(o.note) h += '<p class="muted">Note: ' + esc(o.note) + '</p>';
+    if(o.dl.length){
+        h += '<h4 style="font-size:14px;margin:16px 0 0">Deliveries</h4><table><thead><tr><th class="l">Date</th><th>Pcs</th><th>Amount</th></tr></thead><tbody>'
+            + o.dl.map(d => '<tr><td class="l">' + esc(d.d) + '</td><td>' + d.pcs + '</td><td>' + peso(d.amt) + '</td></tr>').join('')
+            + '<tr class="tot"><td class="l">Total sent value</td><td>' + o.sent + '</td><td>' + peso(o.rev) + '</td></tr></tbody></table>';
+    }
+    return h + notYetSent(o) + sign + '</div>';
+}
+
+function batchHtml(b, o, n){
+    const hasRet = b.items.some(i => i.ret > 0);
+    const pcs = b.items.reduce((a, i) => a + i.q, 0), ret = b.items.reduce((a, i) => a + i.ret, 0);
+    const tot = b.items.reduce((a, i) => a + i.amt, 0);
+    let h = '<div id="slipArea" class="slip"><div class="shop">Trove</div>'
+        + '<h4>Delivery receipt \u00b7 ' + esc(b.d) + '</h4>'
+        + '<div class="muted">' + esc(b.from) + ' \u2192 ' + esc(b.to) + ' \u00b7 batch #' + b.id
+        + (o ? ' \u00b7 order #' + o.id + (n ? ', delivery ' + n : '') : '') + '</div>';
+    if(b.void) h += '<div class="vdb"><b>VOIDED</b>' + (b.why ? ': ' + esc(b.why) : '') + '. Not counted as a sale.</div>';
+    h += '<table><thead><tr><th class="l">Product</th><th>Pcs</th>' + (hasRet ? '<th>Returned</th>' : '') + '<th>Unit price</th><th>Amount</th></tr></thead><tbody>'
+        + b.items.map(i => '<tr><td class="l">' + esc(i.n) + '</td><td>' + i.q + '</td>' + (hasRet ? '<td>' + i.ret + '</td>' : '') + '<td>' + peso(i.pr) + '</td><td>' + peso(i.amt) + '</td></tr>').join('')
+        + '<tr class="tot"><td class="l">Total</td><td>' + pcs + '</td>' + (hasRet ? '<td>' + ret + '</td>' : '') + '<td></td><td>' + peso(tot) + '</td></tr></tbody></table>';
+    if(hasRet) h += '<p class="muted" style="font-size:12px">Older batch: returns were logged before the final-sale rule. Amount = (pcs \u2212 returned) \u00d7 unit price.</p>';
+    return h + (b.void ? '' : notYetSent(o)) + sign + '</div>';
+}
+
+/* key: 'o' for the whole order, or a batch id */
+function showSlip(oid, key){
+    const o = oid ? SLIPS.find(x => x.id == oid) : null;
+    let h = '', title, pt, b = null;
+    if(o){
+        const bs = orderBatches(o.id); let n = 0;
+        h += '<div class="btabs"><button type="button" class="btab' + (key === 'o' ? ' on' : '') + '" onclick="showSlip(' + o.id + ',\'o\')">Whole order</button>'
+            + bs.map(x => { const lbl = x.void ? 'Voided ' + esc(x.d) : 'Delivery ' + (++n); return '<button type="button" class="btab' + (key == x.id ? ' on' : '') + '" onclick="showSlip(' + o.id + ',' + x.id + ')">' + lbl + '</button>'; }).join('')
+            + '</div>';
+    }
+    if(key === 'o'){
+        h += orderHtml(o); title = 'Order #' + o.id; pt = 'Order-' + o.id;
+    } else {
+        b = BATCHES.find(x => x.id == key); if(!b) return;
+        const n = o ? orderBatches(o.id).filter(x => !x.void).findIndex(x => x.id == b.id) + 1 : 0;
+        h += batchHtml(b, o, n); title = 'Delivery \u00b7 ' + b.d; pt = 'Delivery-' + b.raw + '-' + b.id;
+        if(!b.void) h += '<a class="bvl" href="' + URL_SHOW.replace('__ID__', b.id) + '">Wrong qty or price? Open full page to void \u2192</a>';
+    }
+    modal(title, h, pt);
+}
+function viewBatch(id){
+    const b = BATCHES.find(x => x.id == id); if(!b) return false;
+    showSlip(b.oid && SLIPS.find(x => x.id == b.oid) ? b.oid : null, b.id); return true;
+}
+/* Plain click opens the modal; Ctrl/Cmd/Shift+click keeps the normal link (full page / new tab) */
+function vb(e, id){
+    if(e.ctrlKey || e.metaKey || e.shiftKey || e.button) return true;
+    return !viewBatch(id);
+}
+
+/* ---------- Row menu (the "..." button) ---------- */
+function placeMenu(d){
+    const m = d.querySelector('.kmenu'), r = d.querySelector('summary').getBoundingClientRect();
+    m.style.right = (window.innerWidth - r.right) + 'px';
+    m.style.top = (r.bottom + 4) + 'px';
+    const h = m.offsetHeight;
+    if (r.bottom + 4 + h > window.innerHeight - 8) m.style.top = Math.max(8, r.top - h - 4) + 'px';
+}
+function closeMenus(except){ document.querySelectorAll('details.km[open]').forEach(function(d){ if(d !== except) d.removeAttribute('open'); }); }
+document.querySelectorAll('details.km').forEach(function(d){
+    d.addEventListener('toggle', function(){ if(d.open){ closeMenus(d); placeMenu(d); } });
+    d.querySelectorAll('.kmenu button[type="button"]').forEach(function(b){ b.addEventListener('click', function(){ d.removeAttribute('open'); }); });
+});
+document.addEventListener('click', function(e){ if(!e.target.closest('details.km')) closeMenus(); });
+window.addEventListener('scroll', function(){ closeMenus(); }, true);
+window.addEventListener('resize', function(){ closeMenus(); });
+document.addEventListener('keydown', function(e){ if(e.key === 'Escape') closeMenus(); });
+
+/* ---------- Archive ---------- */
+const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+const MS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const monthLabel = k => MONTHS[+k.slice(5,7) - 1] + ' ' + k.slice(0,4);
+const isoDate = d => d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+function weekKey(raw){ const d = new Date(raw + 'T00:00:00'); d.setDate(d.getDate() - (d.getDay() + 6) % 7); return isoDate(d); }
+function weekLabel(k){ const s = new Date(k + 'T00:00:00'), e = new Date(s); e.setDate(e.getDate() + 6);
+    return MS[s.getMonth()] + ' ' + s.getDate() + ' \u2013 ' + (s.getMonth() !== e.getMonth() ? MS[e.getMonth()] + ' ' : '') + e.getDate() + ', ' + e.getFullYear(); }
+
+function askArchive(type, id, what, month){
+    modal('Archive ' + what + '?',
+        '<form method="POST" action="' + URL_ARCHIVE + '"><input type="hidden" name="_token" value="' + CSRF + '">'
+        + '<input type="hidden" name="type" value="' + type + '"><input type="hidden" name="id" value="' + id + '">'
+        + '<p style="margin:0">It goes into the <b>' + esc(month) + '</b> folder in the Archived tab. Nothing is deleted, the sale still counts in your reports, and you can restore it any time.</p>'
+        + foot('<button class="btn btn-gold">Archive</button>') + '</form>');
+}
+
+let BULK = {mode: 'month', key: ''};
+function openBulk(){ BULK = {mode: 'month', key: ''}; drawBulk(); }
+function bulkGroups(){
+    const g = {};
+    ARCHIVABLE.forEach(function(r){ const k = BULK.mode === 'month' ? r.raw.slice(0,7) : weekKey(r.raw); (g[k] = g[k] || []).push(r); });
+    return g;
+}
+function drawBulk(){
+    const g = bulkGroups(), keys = Object.keys(g).sort().reverse();
+    if (!g[BULK.key]) BULK.key = keys[0] || '';
+    const sel = g[BULK.key] || [], lbl = k => BULK.mode === 'month' ? monthLabel(k) : weekLabel(k);
+    modal('Archive a period',
+        '<form method="POST" action="' + URL_ARCHIVE_PERIOD + '"><input type="hidden" name="_token" value="' + CSRF + '">'
+        + '<input type="hidden" name="mode" value="' + BULK.mode + '"><input type="hidden" name="key" value="' + BULK.key + '">'
+        + '<div class="seg2"><button type="button" class="' + (BULK.mode === 'month' ? 'on' : '') + '" onclick="BULK.mode=\'month\';BULK.key=\'\';drawBulk()">By month</button>'
+        + '<button type="button" class="' + (BULK.mode === 'week' ? 'on' : '') + '" onclick="BULK.mode=\'week\';BULK.key=\'\';drawBulk()">By week</button></div>'
+        + (keys.length
+            ? '<label class="f" for="bulkSel">' + (BULK.mode === 'month' ? 'Month' : 'Week (Mon to Sun)') + '</label><select class="in" id="bulkSel" onchange="BULK.key=this.value;drawBulk()">'
+              + keys.map(k => '<option value="' + k + '"' + (k === BULK.key ? ' selected' : '') + '>' + lbl(k) + ' (' + g[k].length + ')</option>').join('') + '</select>'
+              + '<div class="prev"><b>' + sel.length + '</b> item' + (sel.length === 1 ? '' : 's') + ' \u00b7 <b>' + peso(sel.reduce((a, r) => a + r.rev, 0)) + '</b> will move to the Archived tab, each filed under the month of its own date. Pending orders stay active.</div>'
+            : '<div class="prev">Nothing to archive. Only sent, closed or cancelled orders and deliveries can be archived.</div>')
+        + foot('<button class="btn btn-gold"' + (sel.length ? '' : ' disabled') + '>Archive ' + sel.length + '</button>') + '</form>');
 }
 
 /* ---------- Reopen the right modal after a server validation error ---------- */

@@ -64,7 +64,7 @@ class ExpenseController extends Controller
             'description'  => 'required|string|max:255',
             'amount'       => 'required|numeric|min:0.01|max:9999999.99',
             'inventory_id' => 'nullable|exists:inventory,id|required_with:quantity',
-            'quantity'     => 'nullable|integer|min:1|required_with:inventory_id',
+            'quantity'     => 'nullable|numeric|min:0.01|max:999999|required_with:inventory_id',
             'receipt'      => 'nullable|file|mimes:jpg,jpeg,png,pdf|max:4096',
         ]);
 
@@ -137,7 +137,7 @@ class ExpenseController extends Controller
             if ($locked->inventory_id && $locked->quantity) {
                 $inv = Inventory::lockForUpdate()->find($locked->inventory_id);
                 if ($inv) {
-                    $undo = min((int) $locked->quantity, (int) $inv->quantity_on_hand);
+                    $undo = round(min((float) $locked->quantity, (float) $inv->quantity_on_hand), 2);
                     $inv->decrement('quantity_on_hand', $undo);
                     $note = "stock reversed by {$undo} of {$locked->quantity}";
                     InventoryLog::create([

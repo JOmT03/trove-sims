@@ -28,13 +28,20 @@ class BranchTransferController extends Controller
 
     private function board($batches)
     {
-        $pending = BranchOrder::with(['items.product', 'destinationSite'])
+        // Active tab: open orders + finished orders not archived. Archived tab: archived finished orders.
+        $tab = request('tab') === 'archived' ? 'archived' : 'active';
+        $pending = $tab === 'archived' ? collect() : BranchOrder::with(['items.product', 'destinationSite'])
             ->whereIn('status', ['requested', 'produced', 'partial'])
             ->orderBy('needed_by')->get();
         $done = BranchOrder::with(['items.product', 'destinationSite'])
             ->whereIn('status', ['complete', 'cancelled'])
-            ->orderBy('needed_by', 'desc')->limit(10)->get();
+            ->when($tab === 'archived', fn ($q) => $q->whereNotNull('archived_at'), fn ($q) => $q->whereNull('archived_at'))
+            ->orderBy('needed_by', 'desc')->get();
         $orders = BranchOrder::decorate($pending->concat($done));
+        $orderIds = BranchOrder::pluck('id')->all();
+        $loose = $batches->filter(fn ($b) => !$b->branch_order_id || !in_array($b->branch_order_id, $orderIds));
+        $archivedCount = BranchOrder::whereNotNull('archived_at')->count() + $loose->filter(fn ($b) => !empty($b->archived_at))->count();
+        $activeCount = BranchOrder::whereNull('archived_at')->count() + $loose->filter(fn ($b) => empty($b->archived_at))->count();
 
         // Note on the latest live batch of each order that is still short (or was closed short)
         $linked = $batches->filter(fn ($b) => $b->branch_order_id && empty($b->voided_at))
@@ -65,7 +72,7 @@ class BranchTransferController extends Controller
         $products = Product::where('status', 'active')->orderBy('product_name')->get();
         $sites = Site::orderBy('site_name')->get();
 
-        return view('branch-transfers.index', compact('batches', 'orders', 'notes', 'products', 'sites'));
+        return view('branch-transfers.index', compact('batches', 'orders', 'notes', 'products', 'sites', 'tab', 'orderIds', 'archivedCount', 'activeCount'));
     }
 
     public function create(Request $request)
@@ -207,6 +214,87 @@ class BranchTransferController extends Controller
             \Log::error('Batch void failed: ' . $e->getMessage());
             return back()->with('error', 'Failed to void: ' . $e->getMessage());
         }
+    }
+
+    /** Archive one finished order (with its deliveries) or one delivery that has no order. */
+    public function archive(Request $request)
+    {
+        $data = $request->validate(['type' => 'required|in:order,batch', 'id' => 'required|integer']);
+
+        if ($data['type'] === 'order') {
+            $order = BranchOrder::findOrFail($data['id']);
+            if (!in_array($order->status, ['complete', 'cancelled'], true)) {
+                return back()->with('error', 'Send or close order #' . $order->id . ' before archiving it.');
+            }
+            DB::table('branch_orders')->where('id', $order->id)->update(['archived_at' => now()]);
+            $when = $order->needed_by;
+            $what = 'Order #' . $order->id;
+        } else {
+            $batch = Batch::findOrFail($data['id']);
+            if ($batch->branch_order_id && BranchOrder::whereKey($batch->branch_order_id)->exists()) {
+                return back()->with('error', 'This delivery belongs to order #' . $batch->branch_order_id . '. Archive the order instead.');
+            }
+            DB::table('batches')->where('id', $batch->id)->update(['archived_at' => now()]);
+            $when = $batch->batch_date;
+            $what = 'Delivery of ' . $batch->batch_date->format('M d, Y');
+        }
+
+        return redirect()->route('branch-transfers.index')
+            ->with('success', $what . ' archived under ' . $when->format('F Y') . '.');
+    }
+
+    public function restore(Request $request)
+    {
+        $data = $request->validate(['type' => 'required|in:order,batch', 'id' => 'required|integer']);
+        $table = $data['type'] === 'order' ? 'branch_orders' : 'batches';
+        DB::table($table)->where('id', $data['id'])->update(['archived_at' => null]);
+
+        return redirect()->route('branch-transfers.index', ['tab' => 'archived'])
+            ->with('success', 'Restored to Active.');
+    }
+
+    /** Archive every finished order and order-less delivery dated in one month or one week (Mon-Sun). */
+    public function archivePeriod(Request $request)
+    {
+        $data = $request->validate([
+            'mode' => 'required|in:month,week',
+            'key'  => ['required', 'string', 'regex:/^\d{4}-\d{2}(-\d{2})?$/'],
+        ]);
+        [$from, $to, $label] = $this->period($data['mode'], $data['key']);
+
+        $orders = DB::table('branch_orders')->whereIn('status', ['complete', 'cancelled'])->whereNull('archived_at')
+            ->where('needed_by', '>=', $from)->where('needed_by', '<', $to)->update(['archived_at' => now()]);
+        $batches = DB::table('batches')->whereNull('archived_at')
+            ->where(fn ($q) => $q->whereNull('branch_order_id')->orWhereNotIn('branch_order_id', DB::table('branch_orders')->select('id')))
+            ->where('batch_date', '>=', $from)->where('batch_date', '<', $to)->update(['archived_at' => now()]);
+
+        $n = $orders + $batches;
+        return redirect()->route('branch-transfers.index')
+            ->with($n ? 'success' : 'error', $n ? "{$n} item(s) from {$label} archived." : "Nothing to archive in {$label}.");
+    }
+
+    public function restoreMonth(Request $request)
+    {
+        $data = $request->validate(['key' => ['required', 'string', 'regex:/^\d{4}-\d{2}$/']]);
+        [$from, $to, $label] = $this->period('month', $data['key']);
+
+        DB::table('branch_orders')->whereNotNull('archived_at')->where('needed_by', '>=', $from)->where('needed_by', '<', $to)->update(['archived_at' => null]);
+        DB::table('batches')->whereNotNull('archived_at')->where('batch_date', '>=', $from)->where('batch_date', '<', $to)->update(['archived_at' => null]);
+
+        return redirect()->route('branch-transfers.index', ['tab' => 'archived'])
+            ->with('success', $label . ' restored to Active.');
+    }
+
+    /** [first day, day after the last day, label] for a month key (Y-m) or a week key (any date in that week). */
+    private function period(string $mode, string $key): array
+    {
+        if ($mode === 'month') {
+            $start = \Carbon\Carbon::createFromFormat('Y-m-d', substr($key, 0, 7) . '-01')->startOfDay();
+            return [$start->toDateString(), $start->copy()->addMonth()->toDateString(), $start->format('F Y')];
+        }
+        $start = \Carbon\Carbon::parse($key)->startOfWeek(\Carbon\Carbon::MONDAY);
+        $end = $start->copy()->addDays(6);
+        return [$start->toDateString(), $end->copy()->addDay()->toDateString(), 'the week of ' . $start->format('M d') . ' - ' . $end->format('M d, Y')];
     }
 
     private function audit(string $action, $model, array $data): void

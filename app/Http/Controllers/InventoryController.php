@@ -2,10 +2,17 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Expense;
+use App\Models\FinancialAuditLog;
 use App\Models\Inventory;
 use App\Models\InventoryLog;
+use App\Models\InventoryLot;
+use App\Models\PeriodClosure;
 use App\Models\Site;
+use App\Services\InventoryFifoService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 
 class InventoryController extends Controller
 {
@@ -29,7 +36,136 @@ class InventoryController extends Controller
         $lowStock = $inventories->filter(fn($i) => $i->isLowStock())->count();
         $damaged  = $inventories->sum('quantity_damaged');
 
-        return view('inventory.index', compact('inventories', 'lowStock', 'damaged', 'view', 'activeCount', 'archivedCount'));
+        // Movements in the chosen period: In = restocks, Out = used in production or damaged
+        $period = in_array($request->get('period'), ['today', 'week', 'month'], true) ? $request->get('period') : 'month';
+        $to   = now()->toDateString();
+        $from = match ($period) {
+            'today' => $to,
+            'week'  => now()->startOfWeek(Carbon::MONDAY)->toDateString(),
+            default => now()->startOfMonth()->toDateString(),
+        };
+        $ids = $inventories->pluck('id')->all();
+        $moves = InventoryLog::whereIn('inventory_id', $ids)
+            ->whereIn('type', ['received', 'used', 'damaged'])
+            ->whereDate('created_at', '>=', $from)->whereDate('created_at', '<=', $to)
+            ->selectRaw('inventory_id, type, SUM(quantity) as q')
+            ->groupBy('inventory_id', 'type')->get();
+        // A voided restock (expense void) takes its quantity back out of "In"
+        $voidedIn = InventoryLog::whereIn('inventory_id', $ids)->where('type', 'adjustment')
+            ->where('notes', 'like', '[EXPENSE-VOID-%')
+            ->whereDate('created_at', '>=', $from)->whereDate('created_at', '<=', $to)
+            ->selectRaw('inventory_id, SUM(quantity) as q')->groupBy('inventory_id')->pluck('q', 'inventory_id');
+
+        // FIFO cost layer per item: lots oldest-first, what is left of each, and its value
+        $stats = [];
+        foreach ($inventories as $inv) {
+            $lots = InventoryFifoService::lots($inv->id);
+            $left = array_sum(array_column($lots, 'remaining'));
+            $value = array_sum(array_column($lots, 'value'));
+            $last = $lots ? end($lots)['unit_cost'] : null;
+            $mine = $moves->where('inventory_id', $inv->id);
+            $stats[$inv->id] = [
+                'in'    => max(0, round((float) $mine->where('type', 'received')->sum('q') - (float) ($voidedIn[$inv->id] ?? 0), 2)),
+                'out'   => (float) $mine->whereIn('type', ['used', 'damaged'])->sum('q'),
+                'value' => round($value, 2),
+                'cost'  => $left > 0 ? round($value / $left, 2) : $last,
+                'last'  => $last,
+                'lots'  => array_map(fn ($l) => [
+                    'd' => $l['lot']->received_at->format('M d, Y'), 'q' => $l['received'],
+                    'used' => round($l['received'] - $l['remaining'], 2), 'left' => $l['remaining'],
+                    'cost' => $l['unit_cost'], 'value' => $l['value'],
+                ], $lots),
+            ];
+        }
+        $recentLogs = InventoryLog::whereIn('inventory_id', $ids)->latest('created_at')->latest('id')->limit(400)->get()
+            ->groupBy('inventory_id')->map(fn ($g) => $g->take(12)->map(fn ($l) => [
+                'd' => $l->created_at->format('M d, Y'), 't' => $l->type, 'q' => (float) $l->quantity,
+                'n' => \Illuminate\Support\Str::limit(preg_replace('/^\[[A-Z-]+\d*\]\s*/', '', (string) $l->notes), 70),
+            ])->values());
+        $stockValue = round(array_sum(array_column($stats, 'value')), 2);
+        $restockedValue = (float) InventoryLot::whereIn('inventory_id', $ids)
+            ->whereDate('received_at', '>=', $from)->whereDate('received_at', '<=', $to)
+            ->selectRaw('SUM(qty_received * unit_cost) as v')->value('v');
+
+        return view('inventory.index', compact('inventories', 'lowStock', 'damaged', 'view', 'activeCount', 'archivedCount',
+            'period', 'stats', 'recentLogs', 'stockValue', 'restockedValue'));
+    }
+
+    /**
+     * Restock several items in one go. Each line raises stock, writes a "received" movement,
+     * adds a FIFO cost lot, and records an expense (Ingredients, or Packaging for packaging items)
+     * so the purchase reaches the Financial Statement. Voiding that expense reverses the line.
+     */
+    public function restock(Request $request)
+    {
+        $v = $request->validate([
+            'restock_date'         => 'required|date|before_or_equal:today',
+            'supplier'             => 'nullable|string|max:100',
+            'items'                => 'required|array|min:1|max:50',
+            'items.*.inventory_id' => 'required|exists:inventory,id',
+            'items.*.quantity'     => 'required|numeric|min:0.01|max:999999',
+            'items.*.unit_price'   => 'required|numeric|min:0.01|max:999999',
+        ], [], [
+            'items.*.inventory_id' => 'item', 'items.*.quantity' => 'quantity', 'items.*.unit_price' => 'price per unit',
+        ]);
+
+        if (PeriodClosure::isClosed($v['restock_date'])) {
+            return back()->withInput()->with('error',
+                Carbon::parse($v['restock_date'])->format('F Y') . ' is closed. Use a date in the current open month.');
+        }
+
+        $date = Carbon::parse($v['restock_date']);
+        $when = $date->isToday() ? now() : $date->copy()->setTimeFrom(now());
+        $from = trim((string) ($v['supplier'] ?? ''));
+
+        $total = DB::transaction(function () use ($v, $date, $when, $from) {
+            $total = 0;
+            foreach ($v['items'] as $line) {
+                $inv   = Inventory::lockForUpdate()->findOrFail($line['inventory_id']);
+                $qty   = round((float) $line['quantity'], 2);
+                $price = round((float) $line['unit_price'], 2);
+                $amount = round($qty * $price, 2);
+                $total += $amount;
+                $qtyTxt = rtrim(rtrim(number_format($qty, 2, '.', ''), '0'), '.');
+
+                $expense = Expense::create([
+                    'expense_date' => $date->toDateString(),
+                    'category'     => strtolower($inv->category) === 'packaging' ? 'packaging' : 'ingredients',
+                    'description'  => \Illuminate\Support\Str::limit("Restock: {$inv->item_name} {$qtyTxt} {$inv->unit} @ \u{20B1}" . number_format($price, 2)
+                        . ($from !== '' ? " ({$from})" : ''), 250),
+                    'amount'       => $amount,
+                    'inventory_id' => $inv->id,
+                    'quantity'     => $qty,
+                    'created_by'   => auth()->id(),
+                ]);
+
+                $inv->update(['quantity_on_hand' => round((float) $inv->quantity_on_hand + $qty, 2)]);
+
+                $log = new InventoryLog([
+                    'inventory_id' => $inv->id,
+                    'type'         => 'received',
+                    'quantity'     => $qty,
+                    'reference'    => 'RESTOCK',
+                    'notes'        => '[EXPENSE-' . $expense->id . "] Restocked {$qtyTxt} {$inv->unit} @ \u{20B1}" . number_format($price, 2) . ($from !== '' ? " from {$from}" : ''),
+                    'user_id'      => auth()->id(),
+                ]);
+                $log->created_at = $when;
+                $log->save();
+
+                InventoryFifoService::receive($inv->id, $qty, $price, $date->toDateString(), $expense->id);
+
+                FinancialAuditLog::record('expense.recorded', $expense, [
+                    'date' => $date->toDateString(), 'category' => $expense->category,
+                    'amount' => (string) $expense->amount, 'description' => $expense->description,
+                    'restocked' => $qtyTxt . ' x inventory#' . $inv->id, 'has_receipt' => false,
+                ]);
+            }
+            return $total;
+        });
+
+        $n = count($v['items']);
+        return redirect()->route('inventory.index')->with('success',
+            "Restocked {$n} item" . ($n === 1 ? '' : 's') . " (\u{20B1}" . number_format($total, 2) . '). Recorded in Expenses.');
     }
 
     public function lowStockReport()

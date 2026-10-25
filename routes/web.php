@@ -36,6 +36,7 @@ Route::middleware(['auth', \App\Http\Middleware\EnsureActive::class])->group(fun
         Route::get('/inventory/create', [InventoryController::class, 'create'])->name('inventory.create');
         Route::post('/inventory', [InventoryController::class, 'store'])->name('inventory.store');
         Route::patch('/inventory/{inventory}/adjust', [InventoryController::class, 'adjust'])->name('inventory.adjust');
+        Route::post('/inventory/restock', [InventoryController::class, 'restock'])->name('inventory.restock');
         Route::get('/inventory/{inventory}/edit', [InventoryController::class, 'edit'])->name('inventory.edit');
         Route::put('/inventory/{inventory}', [InventoryController::class, 'update'])->name('inventory.update');
         Route::delete('/inventory/{inventory}', [InventoryController::class, 'destroy'])->name('inventory.destroy');
@@ -72,6 +73,10 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/branch-transfers', [\App\Http\Controllers\BranchTransferController::class, 'index'])->name('branch-transfers.index');
     Route::get('/branch-transfers/create', [\App\Http\Controllers\BranchTransferController::class, 'create'])->name('branch-transfers.create');
     Route::post('/branch-transfers', [\App\Http\Controllers\BranchTransferController::class, 'store'])->name('branch-transfers.store');
+    Route::post('/branch-transfers/archive', [\App\Http\Controllers\BranchTransferController::class, 'archive'])->name('branch-transfers.archive');
+    Route::post('/branch-transfers/restore', [\App\Http\Controllers\BranchTransferController::class, 'restore'])->name('branch-transfers.restore');
+    Route::post('/branch-transfers/archive-period', [\App\Http\Controllers\BranchTransferController::class, 'archivePeriod'])->name('branch-transfers.archive-period');
+    Route::post('/branch-transfers/restore-month', [\App\Http\Controllers\BranchTransferController::class, 'restoreMonth'])->name('branch-transfers.restore-month');
     Route::get('/branch-transfers/{batch}', [\App\Http\Controllers\BranchTransferController::class, 'show'])->name('branch-transfers.show');
     Route::put('/branch-transfers/{batch}/returns', [\App\Http\Controllers\BranchTransferController::class, 'logReturns'])->name('branch-transfers.returns');
 });
