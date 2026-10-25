@@ -14,40 +14,33 @@ class ReportController extends Controller
         $from = $request->input('from', Carbon::now()->startOfWeek()->toDateString());
         $to   = $request->input('to',   Carbon::now()->endOfWeek()->toDateString());
 
+        // Dispatched batches are final sales; voided batches do not count.
         $batches = Batch::with('items.product')
+            ->whereNull('voided_at')
             ->whereBetween('batch_date', [$from, $to])
             ->orderBy('batch_date')
             ->get();
 
         // Aggregate per flavor across all batches in the range
         $rows = [];
+        $legacyReturned = 0;   // returns recorded on batches from before the final-sale rule
         foreach ($batches as $b) {
             foreach ($b->items as $it) {
                 $name = $it->product->product_name ?? 'Unknown';
-                if (! isset($rows[$name])) {
-                    $rows[$name] = ['sent' => 0, 'returned' => 0, 'net' => 0, 'revenue' => 0, 'dispatched' => 0, 'loss' => 0];
-                }
-                $rows[$name]['sent']     += $it->qty_sent;
-                $rows[$name]['returned'] += $it->qty_returned;
-                $rows[$name]['net']      += $it->netSold();
-                $rows[$name]['revenue']  += $it->revenue();
-                $rows[$name]['dispatched'] += $it->qty_sent * $it->unit_price;
-                $rows[$name]['loss']       += $it->qty_returned * $it->unit_price;
+                $rows[$name] ??= ['sold' => 0, 'revenue' => 0];
+                $rows[$name]['sold']    += $it->netSold();
+                $rows[$name]['revenue'] += $it->revenue();
+                $legacyReturned         += $it->qty_returned;
             }
         }
         ksort($rows);
 
         $totals = [
-            'sent'     => array_sum(array_column($rows, 'sent')),
-            'returned' => array_sum(array_column($rows, 'returned')),
-            'net'      => array_sum(array_column($rows, 'net')),
-            'revenue'  => array_sum(array_column($rows, 'revenue')),
+            'sold'    => array_sum(array_column($rows, 'sold')),
+            'revenue' => array_sum(array_column($rows, 'revenue')),
         ];
-
-        $dispatched = $batches->sum(fn ($b) => $b->dispatchedValue());
-        $loss       = $batches->sum(fn ($b) => $b->lossValue());
         $batchCount = $batches->count();
 
-        return view('reports.index', compact('rows', 'totals', 'from', 'to', 'dispatched', 'loss', 'batchCount'));
+        return view('reports.index', compact('rows', 'totals', 'from', 'to', 'batchCount', 'legacyReturned'));
     }
 }

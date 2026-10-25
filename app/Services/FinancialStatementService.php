@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\BatchItem;
 use App\Models\Expense;
 use App\Models\Order;
+use App\Models\Sale;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 
@@ -12,8 +13,9 @@ use Illuminate\Support\Facades\DB;
  * Single source of truth for the Financial Statement (Income Statement).
  *
  * REVENUE
- *   1. Custom orders & commissions: total_amount of orders marked Completed, dated by completed_at.
- *   2. Branch sales, by batch_date:
+ *   1. Counter sales (POS): total of completed, non-voided sales, dated by completed_at.
+ *   2. Custom orders & commissions: total_amount of orders marked Completed, dated by completed_at.
+ *   3. Branch sales, by batch_date:
  *        - BEFORE the cutoff: legacy rule, (qty_sent - qty_returned) x unit_price of RECONCILED batches.
  *        - ON/AFTER the cutoff: FINAL SALE, qty_sent x unit_price of every non-voided batch.
  * EXPENSES
@@ -30,6 +32,10 @@ class FinancialStatementService
     {
         $from = $from->copy()->startOfDay();
         $to   = $to->copy()->endOfDay();
+
+        $posRevenue = (float) Sale::completed()->whereNull('voided_at')
+            ->whereBetween('completed_at', [$from, $to])
+            ->sum('total');
 
         $orderRevenue = (float) Order::where('status', 'Completed')
             ->whereNotNull('completed_at')
@@ -71,7 +77,7 @@ class FinancialStatementService
         ksort($cogsLines);
         ksort($opexLines);
 
-        $revenue = round($orderRevenue + $branchRevenue, 2);
+        $revenue = round($posRevenue + $orderRevenue + $branchRevenue, 2);
         $cogs    = round(array_sum($cogsLines), 2);
         $opex    = round(array_sum($opexLines), 2);
         $gross   = round($revenue - $cogs, 2);
@@ -82,6 +88,7 @@ class FinancialStatementService
 
         return [
             'from' => $from, 'to' => $to,
+            'posRevenue' => round($posRevenue, 2),
             'orderRevenue' => round($orderRevenue, 2), 'branchRevenue' => round($branchRevenue, 2),
             'revenue' => $revenue,
             'cogsLines' => $cogsLines, 'cogs' => $cogs,

@@ -79,8 +79,9 @@
 
     <div style="max-width:620px;margin:0 auto;">
         <div style="font-weight:800;text-transform:uppercase;font-size:12px;color:var(--muted);margin-top:8px;">Revenue</div>
-        <div style="{{ $row }}"><span>Custom orders &amp; commissions (completed)</span><span>{!! $v($s['orderRevenue']) !!}</span></div>
-        <div style="{{ $row }}"><span>Branch sales (net of returns)</span><span>{!! $v($s['branchRevenue']) !!}</span></div>
+        <div style="{{ $row }}"><span>Counter sales (POS)</span><span>{!! $v($s['posRevenue'] ?? 0) !!}</span></div>
+        <div style="{{ $row }}"><span>Custom orders (completed)</span><span>{!! $v($s['orderRevenue']) !!}</span></div>
+        <div style="{{ $row }}"><span>Branch transfers (final sale)</span><span>{!! $v($s['branchRevenue']) !!}</span></div>
         <div style="{{ $row }}font-weight:800;border-bottom:2px solid var(--navy);"><span>Total Revenue</span><span>{!! $v($s['revenue']) !!}</span></div>
 
         <div style="font-weight:800;text-transform:uppercase;font-size:12px;color:var(--muted);margin-top:18px;">Less: Cost of Goods Sold</div>
@@ -137,7 +138,7 @@
 <div class="fs-card no-print">
     <h3 style="font-family:var(--f-display);font-size:18px;margin-bottom:10px;">How this Financial Statement is produced</h3>
     <ol class="fs-steps" style="padding-left:18px;">
-        <li><strong>Sales are captured automatically.</strong> A custom order or commission counts as revenue once it is marked <em>Completed</em> (dated by the completion date). Branch sales count once the branch batch is <em>reconciled</em>: (pieces sent − pieces returned) × unit price, dated by the batch date. Pending or unfinished orders and deposits are not revenue yet.</li>
+        <li><strong>Sales are captured automatically.</strong> A counter sale counts as revenue when it is completed at the POS (a voided sale drops out). A custom order counts once it is marked <em>Completed</em> (dated by the completion date). A branch transfer is a <em>final sale</em>: pieces sent &times; unit price, dated by the batch date (a voided batch drops out). Pending or unfinished orders and deposits are not revenue yet.</li>
         <li><strong>Expenses are logged in the Expenses ledger</strong> with date, category, amount, optional receipt and optional stock purchase. Ingredients and packaging are <em>Cost of Goods Sold</em>; everything else is <em>Operating Expenses</em>.</li>
         <li><strong>Entries are permanent.</strong> Nothing can be edited or deleted. A wrong entry is <em>voided</em> with a written reason; it stays on record, is struck through, and drops out of the totals. A future-dated expense is not allowed.</li>
         <li><strong>The statement is calculated, not typed.</strong> Gross Profit = Revenue − COGS. Net Income = Gross Profit − Operating Expenses. This page is view-only; no one can change a figure here.</li>

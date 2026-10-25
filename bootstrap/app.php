@@ -14,7 +14,6 @@ return Application::configure(basePath: dirname(__DIR__))
         // Register middleware aliases
         $middleware->alias([
             'admin'    => \App\Http\Middleware\AdminMiddleware::class,
-            'supplier' => \App\Http\Middleware\SupplierMiddleware::class,
         ]);
 
         // Staff accounts can only reach POS + Orders

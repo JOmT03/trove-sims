@@ -1,6 +1,6 @@
 <x-app-layout>
 <x-slot name="header">Reports</x-slot>
-<x-slot name="subheader">Weekly batch report &mdash; sent, returned &amp; net sold</x-slot>
+<x-slot name="subheader">Weekly batch report &mdash; products sent to Jacinto (final sale)</x-slot>
 
 <style>
 .wrap{max-width:900px;margin:0 auto;}
@@ -13,7 +13,7 @@
 .rep-head{padding:22px 24px;border-bottom:1px solid #EDE0D0;}
 .rep-head h2{font-size:18px;font-weight:800;margin:0 0 4px;color:#2E1C10;}
 .rep-head .range{font-size:13px;color:#8A7460;}
-.sum{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:#EDE0D0;border-bottom:1px solid #EDE0D0;}
+.sum{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:#EDE0D0;border-bottom:1px solid #EDE0D0;}
 .sum div{background:#fff;padding:16px;text-align:center;}
 .sum .l{font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:#8A7460;font-weight:700;}
 .sum .n{font-size:19px;font-weight:800;margin-top:4px;font-variant-numeric:tabular-nums;}
@@ -69,34 +69,32 @@ tr.tot td{font-weight:800;background:#FDF6EC;border-top:2px solid #EDE0D0;}
         </div>
 
         <div class="sum">
-            <div class="rkpi" onclick="repDetail('dispatched')"><div class="l">Dispatched</div><div class="n disp">&#8369;{{ number_format($dispatched,2) }}</div></div>
-            <div class="rkpi" onclick="repDetail('net')"><div class="l">Net Sold</div><div class="n net">&#8369;{{ number_format($totals['revenue'],2) }}</div></div>
-            <div class="rkpi" onclick="repDetail('loss')"><div class="l">Returned (loss)</div><div class="n loss">&#8369;{{ number_format($loss,2) }}</div></div>
-            <div class="rkpi" onclick="repDetail('units')"><div class="l">Units Sold</div><div class="n">{{ $totals['net'] }} pcs</div></div>
+            <div><div class="l">Batches Sent</div><div class="n disp">{{ $batchCount }}</div></div>
+            <div class="rkpi" onclick="repDetail('units')"><div class="l">Units Sold</div><div class="n">{{ $totals['sold'] }} pcs</div></div>
+            <div class="rkpi" onclick="repDetail('sales')"><div class="l">Sales</div><div class="n net">&#8369;{{ number_format($totals['revenue'],2) }}</div></div>
         </div>
 
         @if(count($rows))
         <table>
-            <thead><tr><th>Flavor</th><th>Sent</th><th>Returned</th><th>Net Sold</th><th>Revenue</th></tr></thead>
+            <thead><tr><th>Flavor</th><th>Units Sold</th><th>Sales</th></tr></thead>
             <tbody>
                 @foreach($rows as $name => $r)
                 <tr>
                     <td>{{ $name }}</td>
-                    <td>{{ $r['sent'] }}</td>
-                    <td class="ret">{{ $r['returned'] }}</td>
-                    <td style="font-weight:700;">{{ $r['net'] }}</td>
+                    <td style="font-weight:700;">{{ $r['sold'] }}</td>
                     <td>&#8369;{{ number_format($r['revenue'],2) }}</td>
                 </tr>
                 @endforeach
                 <tr class="tot">
                     <td>Total</td>
-                    <td>{{ $totals['sent'] }}</td>
-                    <td>{{ $totals['returned'] }}</td>
-                    <td>{{ $totals['net'] }}</td>
+                    <td>{{ $totals['sold'] }}</td>
                     <td>&#8369;{{ number_format($totals['revenue'],2) }}</td>
                 </tr>
             </tbody>
         </table>
+        @if($legacyReturned > 0)
+        <div style="padding:12px 16px;font-size:12px;color:#8A7460;border-top:1px solid #EDE0D0;">Units sold already exclude {{ $legacyReturned }} pc(s) returned on batches from before the final-sale rule (October 7, 2026).</div>
+        @endif
         @else
         <div class="empty">No batches in this date range. Try a different range, or create a batch in Branch Transfers.</div>
         @endif
@@ -133,10 +131,8 @@ function rkpiPeso(n){ return "\u20B1" + Number(n||0).toLocaleString('en-PH',{min
 function rkpiClose(){ document.getElementById('rkpiBg').classList.remove('show'); }
 function repDetail(metric){
   const defs = {
-    dispatched:{t:'Dispatched \u2014 what was sent', cols:['Flavor','Qty Sent','Value'],       get:function(r){return [r.sent, rkpiPeso(r.dispatched)];}},
-    net:       {t:'Net Sold',                       cols:['Flavor','Net Sold','Revenue'],     get:function(r){return [r.net, rkpiPeso(r.revenue)];}},
-    loss:      {t:'Returned (loss)',                cols:['Flavor','Qty Returned','Loss Value'],get:function(r){return [r.returned, rkpiPeso(r.loss)];}},
-    units:     {t:'Units Sold',                     cols:['Flavor','Net Sold (pcs)'],         get:function(r){return [r.net];}}
+    sales:     {t:'Sales',      cols:['Flavor','Units Sold','Sales'], get:function(r){return [r.sold, rkpiPeso(r.revenue)];}},
+    units:     {t:'Units Sold', cols:['Flavor','Units Sold (pcs)'],   get:function(r){return [r.sold];}}
   }[metric];
   if(!defs){ return; }
   document.getElementById('rkpiTitle').textContent = defs.t;

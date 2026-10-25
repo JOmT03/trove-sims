@@ -43,8 +43,6 @@
   <div>
     <section class="set-panel" data-p="profile">
       @include('profile.partials.update-profile-information-form')
-      <hr style="margin:26px 0;border:none;border-top:1px solid var(--border);">
-      @include('profile.partials.delete-user-form')
     </section>
 
     <section class="set-panel" data-p="security" hidden>

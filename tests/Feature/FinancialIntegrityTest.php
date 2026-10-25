@@ -29,8 +29,10 @@ function mkExpense(array $o = []): Expense
 }
 
 test('staff cannot reach finance pages; managers can', function () {
-    $this->actingAs(mkUser('Staff'))->get('/expenses')->assertForbidden();
-    $this->actingAs(mkUser('Staff'))->get('/financial-statement')->assertForbidden();
+    // Staff are sent back to the POS when they open a page outside POS and Orders
+    $this->actingAs(mkUser('Staff'))->get('/expenses')->assertRedirect('/pos');
+    $this->actingAs(mkUser('Staff'))->get('/financial-statement')->assertRedirect('/pos');
+    expect($this->actingAs(mkUser('Staff'))->post('/expenses', [])->status())->toBe(403);
     $this->actingAs(mkUser('Manager'))->get('/expenses')->assertOk();
     $this->actingAs(mkUser('Manager'))->get('/financial-statement')->assertOk();
     $this->actingAs(mkUser('Manager'))->get('/financial-audit-log')->assertOk();

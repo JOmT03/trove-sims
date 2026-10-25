@@ -1,7 +1,6 @@
 <?php
 
-it('returns a successful response', function () {
-    $response = $this->get('/');
-
-    $response->assertStatus(200);
+it('sends guests to the login page', function () {
+    $this->get('/')->assertRedirect('/login');
+    $this->get('/login')->assertOk();
 });

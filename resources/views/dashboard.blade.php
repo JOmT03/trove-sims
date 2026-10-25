@@ -116,18 +116,17 @@ tr.tot td{font-weight:800;background:#FDF6EC;}
     <section class="card star">
         <div class="hd"><h3>Latest Batch</h3><span class="m">{{ $latestBatch ? $latestBatch->batch_date->format('M d, Y') : '' }}</span></div>
         @if($latestBatch && $latestBatch->items->count())
-        <div class="sum">
-            <div><div class="sl">Dispatched</div><div class="sn disp">&#8369;{{ number_format($latestBatch->dispatchedValue(),2) }}</div></div>
-            <div><div class="sl">Net Sold</div><div class="sn net">&#8369;{{ number_format($latestBatch->totalRevenue(),2) }}</div></div>
-            <div><div class="sl">Returned (loss)</div><div class="sn loss">&#8369;{{ number_format($latestBatch->lossValue(),2) }}</div></div>
+        <div class="sum" style="grid-template-columns:repeat(2,minmax(0,1fr));">
+            <div><div class="sl">Pieces Sent</div><div class="sn disp">{{ $latestBatch->totalNetSold() }} pcs</div></div>
+            <div><div class="sl">Sales (final)</div><div class="sn net">&#8369;{{ number_format($latestBatch->totalRevenue(),2) }}</div></div>
         </div>
         <table style="margin-top:8px;">
-            <thead><tr><th>Flavor</th><th>Sent</th><th>Ret</th><th>Net Sold</th><th>Revenue</th></tr></thead>
+            <thead><tr><th>Flavor</th><th>Sent</th><th>Unit Price</th><th>Amount</th></tr></thead>
             <tbody>
                 @foreach($latestBatch->items as $it)
-                <tr><td>{{ $it->product->product_name ?? '-' }}</td><td>{{ $it->qty_sent }}</td><td class="ret">{{ $it->qty_returned }}</td><td style="font-weight:700;">{{ $it->netSold() }}</td><td>&#8369;{{ number_format($it->revenue(),2) }}</td></tr>
+                <tr><td>{{ $it->product->product_name ?? '-' }}</td><td style="font-weight:700;">{{ $it->netSold() }}</td><td>&#8369;{{ number_format($it->unit_price,2) }}</td><td>&#8369;{{ number_format($it->revenue(),2) }}</td></tr>
                 @endforeach
-                <tr class="tot"><td>Total</td><td>{{ $latestBatch->totalSent() }}</td><td>{{ $latestBatch->totalReturned() }}</td><td>{{ $latestBatch->totalNetSold() }}</td><td>&#8369;{{ number_format($latestBatch->totalRevenue(),2) }}</td></tr>
+                <tr class="tot"><td>Total</td><td>{{ $latestBatch->totalNetSold() }}</td><td></td><td>&#8369;{{ number_format($latestBatch->totalRevenue(),2) }}</td></tr>
             </tbody>
         </table>
         <div style="padding:12px 18px;"><a href="{{ route('branch-transfers.index') }}" style="font-size:12.5px;color:#4A2C17;font-weight:700;text-decoration:none;">View all batches &rarr;</a></div>
