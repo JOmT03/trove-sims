@@ -42,11 +42,6 @@ class DashboardController extends Controller
         $finishedStock = (int) Product::sum('stock_quantity');
         $totalProducts = Product::count();
 
-        //  Latest batch (for reconciliation card) 
-        $latestBatch = Batch::with(['items.product', 'sourceSite', 'destinationSite'])
-            ->orderBy('batch_date', 'desc')
-            ->orderBy('id', 'desc')
-            ->first();
 
         //  Can Still Bake (limiting-ingredient math from recipes) 
         $canBake = [];
@@ -78,7 +73,7 @@ class DashboardController extends Controller
         return view('dashboard', compact(
             'batchSent', 'totalBatches', 'returnedQty', 'netSoldQty', 'netSoldRevenue',
             'lowCount', 'stockLevels', 'finishedStock', 'totalProducts',
-            'latestBatch', 'canBake', 'maxBake', 'movements'
+            'canBake', 'maxBake', 'movements'
         ));
     }
 }

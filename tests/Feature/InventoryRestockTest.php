@@ -73,3 +73,23 @@ test('restock needs a price and a quantity on every line, and no future dates', 
     expect(Expense::count())->toBe(0)
         ->and((float) DB::table('inventory')->where('id', $flour)->value('quantity_on_hand'))->toBe(1.0);
 });
+
+test('recording damage needs a reason and takes the units out of stock only once', function () {
+    $eggs = restockItem('Eggs', 'Dairy & Eggs', 30);
+    $user = restockUser();
+
+    $this->actingAs($user)->patch("/inventory/{$eggs}/adjust", ['type' => 'damaged', 'quantity' => 4])
+        ->assertSessionHasErrors('notes');
+    $this->actingAs($user)->patch("/inventory/{$eggs}/adjust", ['type' => 'damaged', 'quantity' => 40, 'notes' => 'Broken: dropped'])
+        ->assertSessionHas('error');
+
+    $this->actingAs($user)->patch("/inventory/{$eggs}/adjust", ['type' => 'damaged', 'quantity' => 4, 'notes' => 'Spoiled / expired: rotten'])
+        ->assertSessionHas('success');
+
+    $item = \App\Models\Inventory::find($eggs);
+    expect((float) $item->quantity_on_hand)->toBe(26.0)
+        ->and($item->usableQuantity())->toBe(26.0)
+        ->and(DB::table('inventory_logs')->where('inventory_id', $eggs)->where('type', 'damaged')->value('notes'))->toBe('Spoiled / expired: rotten');
+
+    $this->actingAs($user)->get('/inventory')->assertOk()->assertSee('4 kg damaged this month', false);
+});

@@ -4,7 +4,7 @@
 
 @php
     $lowCrit = $inventories->filter(function($i){ $on=(float)$i->quantity_on_hand; $min=(float)$i->minimum_stock; return $on <= $min*1.5; })->count();
-    $dmgItems = $inventories->filter(function($i){ return (float)$i->quantity_damaged > 0; })->count();
+    $dmgItems = collect($stats)->filter(fn($s) => $s['dmg'] > 0)->count();
     $isOwner = auth()->user()->role === 'Owner';
     $periodLabel = ['today' => 'today', 'week' => 'this week', 'month' => 'this month'][$period];
     $q2 = fn($n) => rtrim(rtrim(number_format((float) $n, 2), '0'), '.');
@@ -94,6 +94,9 @@ tr.arch .item{color:var(--muted);}
     @if(session('error'))
         <div class="inv-alert err">{{ session('error') }}</div>
     @endif
+    @if($errors->any())
+        <div class="inv-alert err">{{ $errors->first() }}</div>
+    @endif
 
     @include('inventory._tabs', ['current' => $view])
 
@@ -101,7 +104,7 @@ tr.arch .item{color:var(--muted);}
         <div class="inv-kpis" id="kpis">
             <button class="ikpi k-all active" data-filter="all" onclick="setFilter(this)"><div class="l">Total Items</div><div class="v">{{ $inventories->count() }}</div><div class="hint">showing all</div></button>
             <button class="ikpi k-low" data-filter="low" onclick="setFilter(this)"><div class="l">Low / Critical Stock</div><div class="v">{{ $lowCrit }}</div><div class="hint">click to filter</div></button>
-            <button class="ikpi k-dmg" data-filter="dmg" onclick="setFilter(this)"><div class="l">With Damaged Units</div><div class="v">{{ $dmgItems }}</div><div class="hint">click to filter</div></button>
+            <button class="ikpi k-dmg" data-filter="dmg" onclick="setFilter(this)"><div class="l">Damaged {{ $periodLabel }}</div><div class="v">{{ $dmgItems }}</div><div class="hint">click to filter</div></button>
             <div class="ikpi k-val info"><div class="l">Stock value (FIFO)</div><div class="v">&#8369;{{ number_format($stockValue, 2) }}</div><div class="hint">on hand, at the cost of each lot</div></div>
             <div class="ikpi k-rs info"><div class="l">Restocked {{ $periodLabel }}</div><div class="v">&#8369;{{ number_format($restockedValue, 2) }}</div><div class="hint">total purchases</div></div>
         </div>
@@ -140,7 +143,7 @@ tr.arch .item{color:var(--muted);}
                     $st = $stats[$inv->id];
                     $unit1 = preg_replace('/s$/', '', $inv->unit);
                 @endphp
-                <tr data-id="{{ $inv->id }}" onclick="if(!event.target.closest('.actcell'))openLots({{ $inv->id }})" data-tier="{{ $t }}" data-dmg="{{ $dmg>0?'1':'0' }}" data-name="{{ strtolower($inv->item_name) }}" data-cat="{{ strtolower($inv->category) }}" class="{{ $archived ? 'arch' : '' }}">
+                <tr data-id="{{ $inv->id }}" onclick="if(!event.target.closest('.actcell'))openLots({{ $inv->id }})" data-tier="{{ $t }}" data-dmg="{{ $st['dmg']>0?'1':'0' }}" data-name="{{ strtolower($inv->item_name) }}" data-cat="{{ strtolower($inv->category) }}" class="{{ $archived ? 'arch' : '' }}">
                     <td>
                         <div class="item">{{ $inv->item_name }}
                             @if($archived)
@@ -150,8 +153,8 @@ tr.arch .item{color:var(--muted);}
                         @if($archived && $inv->archived_at)
                             <div class="arch-meta">Archived {{ \Carbon\Carbon::parse($inv->archived_at)->format('M j, Y') }}</div>
                         @endif
-                        @if(!$archived && $dmg>0)
-                            <div class="dmgnote">&#9888; {{ number_format($dmg,2) }} {{ $inv->unit }} damaged</div>
+                        @if(!$archived && $st['dmg'] > 0)
+                            <div class="dmgnote">&#9888; {{ $q2($st['dmg']) }} {{ $inv->unit }} damaged {{ $periodLabel }}@if($st['dmgWhy']) &middot; {{ \Illuminate\Support\Str::limit($st['dmgWhy'], 40) }}@endif</div>
                         @endif
                     </td>
                     <td class="c-cat"><span class="cat">{{ $inv->category }}</span></td>
@@ -183,7 +186,8 @@ tr.arch .item{color:var(--muted);}
                                 <button type="button" onclick="openLots({{ $inv->id }})"><svg viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h10"/></svg> FIFO lots &amp; movements</button>
                                 <a href="{{ route('inventory.show',$inv) }}"><svg viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" d="M2.5 12C3.7 7.9 7.5 5 12 5s8.3 2.9 9.5 7c-1.2 4.1-5 7-9.5 7s-8.3-2.9-9.5-7z"/></svg> View</a>
                                 @can('admin')
-                                    <a href="{{ route('inventory.edit',$inv) }}"><svg viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7M18.5 2.5a2.1 2.1 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg> Edit</a>
+                                    <button type="button" onclick="openEdit({{ $inv->id }}, 'details')"><svg viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7M18.5 2.5a2.1 2.1 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg> Edit</button>
+                                    <button type="button" onclick="openEdit({{ $inv->id }}, 'damage')"><svg viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v4m0 4h.01M10.3 3.9L1.8 18a2 2 0 001.7 3h17a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z"/></svg> Record damaged / spoiled</button>
                                     <button class="warn" onclick="if(confirm('Archive this item? It stays in records but is hidden.')){document.getElementById('arch{{ $inv->id }}').submit();}"><svg viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M21 8v13H3V8M1 3h22v5H1zM10 12h4"/></svg> Archive</button>
                                     <form id="arch{{ $inv->id }}" method="POST" action="{{ route('inventory.archive',$inv) }}" style="display:none">@csrf @method('PATCH')</form>
                                 @endcan
@@ -244,6 +248,7 @@ document.addEventListener('click', closeMenus);
     $jf = JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_UNESCAPED_UNICODE;
     $invData = $inventories->map(fn($i) => [
         'id' => (int) $i->id, 'n' => $i->item_name, 'c' => $i->category, 'u' => $i->unit,
+        'upd' => route('inventory.update', $i), 'adj' => route('inventory.adjust', $i),
         'on' => (float) $i->quantity_on_hand, 'min' => (float) $i->minimum_stock,
         'last' => $stats[$i->id]['last'], 'cost' => $stats[$i->id]['cost'], 'value' => $stats[$i->id]['value'],
         'lots' => $stats[$i->id]['lots'], 'moves' => $recentLogs->get($i->id, collect())->values(),
@@ -284,6 +289,12 @@ document.addEventListener('click', closeMenus);
 .rs-t th{text-align:left;font-size:10.5px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);background:var(--bg);padding:8px 10px;}
 .rs-t td{padding:8px 10px;border-top:1px solid var(--border);font-variant-numeric:tabular-nums;}
 .rs-t .r{text-align:right;} .rs-t tr.done td{color:var(--muted);}
+.ed-tabs{display:flex;gap:4px;background:var(--bg);border:1px solid var(--border);padding:3px;border-radius:10px;margin-bottom:16px;}
+.ed-tabs button{flex:1;border:0;background:none;padding:8px;border-radius:8px;font-weight:700;font-size:13px;color:var(--muted);cursor:pointer;font-family:var(--f-body);}
+.ed-tabs button.on{background:var(--white);color:var(--text);box-shadow:0 1px 3px rgba(0,0,0,.08);}
+.ed-chips{display:flex;gap:6px;flex-wrap:wrap;}
+.ed-chip{border:1px solid var(--border);background:var(--white);color:var(--muted);border-radius:999px;padding:6px 12px;font-size:12.5px;font-weight:700;cursor:pointer;font-family:var(--f-body);}
+.ed-chip.on{background:#FBE4DA;border-color:#C2410C;color:#C2410C;}
 @media(max-width:640px){.rs-grid{grid-template-columns:1fr 1fr;}.rs-grid.h{display:none;}.rs-top{grid-template-columns:1fr;}}
 </style>
 <script>
@@ -346,6 +357,50 @@ function rsCheck(){
         if(!(parseFloat(r.p) > 0)) return err('Enter the price per unit for ' + it.n + '.');
     }
     if(rows.length !== RS.length){ RS = rows; rsDraw(); }
+    return true;
+}
+
+/* ---------- Edit an item / record damaged or spoiled units ---------- */
+const CATS = ['Baking Essentials', 'Dairy & Eggs', 'Flavoring & Fillings', 'Packaging', 'Coffee & Beverage', 'Other'];
+const UNITS = ['g', 'kg', 'ml', 'liters', 'pcs', 'dozen', 'pack'];
+const REASONS = ['Broken', 'Spoiled / expired', 'Contaminated', 'Other'];
+function selOpts(list, cur){ const l = list.indexOf(cur) < 0 && cur ? [cur].concat(list) : list; return l.map(v => '<option' + (v === cur ? ' selected' : '') + '>' + esc(v) + '</option>').join(''); }
+function openEdit(id, tab){
+    const it = invById(id); if(!it) return;
+    const tabs = '<div class="ed-tabs"><button type="button" class="' + (tab === 'details' ? 'on' : '') + '" onclick="openEdit(' + id + ',\'details\')">Details</button>'
+        + '<button type="button" class="' + (tab === 'damage' ? 'on' : '') + '" onclick="openEdit(' + id + ',\'damage\')">Damaged / spoiled</button></div>';
+    let h;
+    if(tab === 'details'){
+        h = '<form method="POST" action="' + it.upd + '"><input type="hidden" name="_token" value="' + RS_CSRF + '"><input type="hidden" name="_method" value="PUT">'
+            + '<div class="rs-scroll">' + tabs
+            + '<div class="aim-fg"><label for="edName">Item name *</label><input id="edName" name="item_name" maxlength="255" required value="' + esc(it.n) + '"></div>'
+            + '<div class="aim-fg2"><div class="aim-fg"><label for="edCat">Category *</label><select id="edCat" name="category" required>' + selOpts(CATS, it.c) + '</select></div>'
+            + '<div class="aim-fg"><label for="edUnit">Unit *</label><select id="edUnit" name="unit" required>' + selOpts(UNITS, it.u) + '</select></div></div>'
+            + '<div class="aim-fg2"><div class="aim-fg"><label for="edOn">Stock on hand *</label><input id="edOn" type="number" name="quantity_on_hand" step="0.01" min="0" required value="' + it.on + '"><div class="rs-hint">Change only to correct a count. The change is logged. Use Restock to add stock.</div></div>'
+            + '<div class="aim-fg"><label for="edMin">Min stock (alert) *</label><input id="edMin" type="number" name="minimum_stock" step="0.01" min="0" required value="' + it.min + '"></div></div>'
+            + '</div><div class="aim-foot"><button type="button" class="aim-ghost" onclick="closeRs()">Cancel</button><button class="aim-primary">Save changes</button></div></form>';
+    } else {
+        h = '<form method="POST" action="' + it.adj + '" onsubmit="return dmgCheck(' + it.on + ')"><input type="hidden" name="_token" value="' + RS_CSRF + '"><input type="hidden" name="_method" value="PATCH">'
+            + '<input type="hidden" name="type" value="damaged"><input type="hidden" name="notes" id="dmgNotes">'
+            + '<div class="rs-scroll">' + tabs
+            + '<p class="rs-hint" style="margin:0 0 12px">Damaged or spoiled units are taken out of the stock and counted under Damaged. On hand now: <b>' + q2(it.on) + ' ' + esc(it.u) + '</b></p>'
+            + '<div class="aim-fg"><label for="dmgQty">Quantity damaged *</label><div class="rs-q"><input id="dmgQty" type="number" name="quantity" min="0.01" step="0.01" max="' + it.on + '" inputmode="decimal" required><span class="u">' + esc(it.u) + '</span></div></div>'
+            + '<div class="aim-fg"><label>Reason *</label><div class="ed-chips">' + REASONS.map((r, k) => '<button type="button" class="ed-chip' + (k === 0 ? ' on' : '') + '" onclick="dmgPick(this)">' + esc(r) + '</button>').join('') + '</div></div>'
+            + '<div class="aim-fg"><label for="dmgWhy">Remarks *</label><textarea id="dmgWhy" rows="2" maxlength="400" placeholder="e.g., 4 eggs cracked during delivery"></textarea></div>'
+            + '<div id="dmgErr"></div></div>'
+            + '<div class="aim-foot"><button type="button" class="aim-ghost" onclick="closeRs()">Cancel</button><button class="aim-primary" style="background:#C2410C">Record damage</button></div></form>';
+    }
+    openRsModal(tab === 'details' ? 'Edit ' + it.n : 'Damaged / spoiled: ' + it.n, it.c, h);
+}
+function dmgPick(b){ document.querySelectorAll('.ed-chip').forEach(c => c.classList.remove('on')); b.classList.add('on'); }
+function dmgCheck(on){
+    const err = m => { document.getElementById('dmgErr').innerHTML = '<div class="rs-err">' + esc(m) + '</div>'; return false; };
+    const q = parseFloat(document.getElementById('dmgQty').value), why = document.getElementById('dmgWhy').value.trim();
+    const reason = (document.querySelector('.ed-chip.on') || {}).textContent || 'Other';
+    if(!(q > 0)) return err('Enter how many units were damaged.');
+    if(q > on) return err('Only ' + q2(on) + ' is on hand.');
+    if(why.length < 3) return err('Write a short remark about what happened.');
+    document.getElementById('dmgNotes').value = reason + ': ' + why;
     return true;
 }
 

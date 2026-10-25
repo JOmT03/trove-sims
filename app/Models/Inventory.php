@@ -29,9 +29,14 @@ class Inventory extends Model
         return $this->hasMany(InventoryLog::class);
     }
 
+    /**
+     * Stock that can still be used. Recording damage already takes the units out of
+     * quantity_on_hand; quantity_damaged is only a running tally of what was written off,
+     * so it must not be subtracted a second time.
+     */
     public function usableQuantity()
     {
-        return $this->quantity_on_hand - $this->quantity_damaged;
+        return (float) $this->quantity_on_hand;
     }
 
     public function isLowStock()

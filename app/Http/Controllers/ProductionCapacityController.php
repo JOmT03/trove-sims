@@ -42,7 +42,7 @@ class ProductionCapacityController extends Controller
 
             foreach ($materials as $m) {
                 $needed    = (float) $m->pivot->quantity_needed;
-                $available = (float) $m->quantity_on_hand - (float) $m->quantity_damaged;
+                $available = (float) $m->quantity_on_hand; // damaged units are already out of on-hand
                 if ($available < 0) {
                     $available = 0.0;
                 }

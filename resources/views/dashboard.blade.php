@@ -71,36 +71,13 @@ tr.tot td{font-weight:800;background:#FDF6EC;}
 
 <div class="grid">
     <div class="col">
-        <section class="card star">
-            <div class="hd"><h3>Latest Batch &mdash; Reconciliation</h3><span class="m">{{ $latestBatch ? $latestBatch->batch_date->format('M d, Y') : '' }}</span></div>
-            @if($latestBatch && $latestBatch->items->count())
-            <div class="sum">
-                <div><div class="sl">Dispatched</div><div class="sn disp">&#8369;{{ number_format($latestBatch->dispatchedValue(),2) }}</div></div>
-                <div><div class="sl">Net Sold</div><div class="sn net">&#8369;{{ number_format($latestBatch->totalRevenue(),2) }}</div></div>
-                <div><div class="sl">Returned (loss)</div><div class="sn loss">&#8369;{{ number_format($latestBatch->lossValue(),2) }}</div></div>
-            </div>
-            <table style="margin-top:8px;">
-                <thead><tr><th>Flavor</th><th>Sent</th><th>Ret</th><th>Net Sold</th><th>Revenue</th></tr></thead>
-                <tbody>
-                    @foreach($latestBatch->items as $it)
-                    <tr><td>{{ $it->product->product_name ?? '-' }}</td><td>{{ $it->qty_sent }}</td><td class="ret">{{ $it->qty_returned }}</td><td style="font-weight:700;">{{ $it->netSold() }}</td><td>&#8369;{{ number_format($it->revenue(),2) }}</td></tr>
-                    @endforeach
-                    <tr class="tot"><td>Total</td><td>{{ $latestBatch->totalSent() }}</td><td>{{ $latestBatch->totalReturned() }}</td><td>{{ $latestBatch->totalNetSold() }}</td><td>&#8369;{{ number_format($latestBatch->totalRevenue(),2) }}</td></tr>
-                </tbody>
-            </table>
-            <div style="padding:12px 18px;"><a href="{{ route('branch-transfers.index') }}" style="font-size:12.5px;color:#4A2C17;font-weight:700;text-decoration:none;">View all batches &rarr;</a></div>
-            @else
-            <div class="empty">No batches yet. <a href="{{ route('branch-transfers.create') }}" style="color:#D9782C;font-weight:700;">Create your first batch dispatch</a>.</div>
-            @endif
-        </section>
-
         <section class="card">
             <div class="hd"><h3>Recent Stock Movements</h3><span class="m">ingredient activity</span></div>
             @if($movements->count())
                 @foreach($movements as $mv)
                 <div class="mv">
                     @php $t = strtolower($mv->type); @endphp
-                    <span class="mv-ic {{ $t==='received' ? 'recv' : ($t==='used' ? 'used' : 'adj') }}">{{ $t==='received' ? '+' : ($t==='used' ? '-' : '~') }}</span>
+                    <span class="mv-ic {{ $t==='received' ? 'recv' : (in_array($t, ['used','damaged']) ? 'used' : 'adj') }}">{{ $t==='received' ? '+' : (in_array($t, ['used','damaged']) ? '-' : '~') }}</span>
                     <div class="mv-b"><div class="t">{{ ucfirst($mv->type) }} {{ rtrim(rtrim(number_format($mv->quantity,2),'0'),'.') }} {{ $mv->inventory->unit ?? '' }} &middot; {{ $mv->inventory->item_name ?? '' }}</div><div class="s">{{ $mv->notes }}</div></div>
                     <span class="mv-t">{{ $mv->created_at->diffForHumans(null, true) }} ago</span>
                 </div>

@@ -56,6 +56,12 @@ class InventoryController extends Controller
             ->whereDate('created_at', '>=', $from)->whereDate('created_at', '<=', $to)
             ->selectRaw('inventory_id, SUM(quantity) as q')->groupBy('inventory_id')->pluck('q', 'inventory_id');
 
+        // Latest damage reason per item in the period (shown under the item name)
+        $dmgWhy = InventoryLog::whereIn('inventory_id', $ids)->where('type', 'damaged')
+            ->whereDate('created_at', '>=', $from)->whereDate('created_at', '<=', $to)
+            ->orderBy('created_at')->orderBy('id')->get(['inventory_id', 'notes'])
+            ->mapWithKeys(fn ($l) => [$l->inventory_id => (string) $l->notes])->all();
+
         // FIFO cost layer per item: lots oldest-first, what is left of each, and its value
         $stats = [];
         foreach ($inventories as $inv) {
@@ -65,6 +71,8 @@ class InventoryController extends Controller
             $last = $lots ? end($lots)['unit_cost'] : null;
             $mine = $moves->where('inventory_id', $inv->id);
             $stats[$inv->id] = [
+                'dmg'   => round((float) $mine->where('type', 'damaged')->sum('q'), 2),
+                'dmgWhy' => $dmgWhy[$inv->id] ?? null,
                 'in'    => max(0, round((float) $mine->where('type', 'received')->sum('q') - (float) ($voidedIn[$inv->id] ?? 0), 2)),
                 'out'   => (float) $mine->whereIn('type', ['used', 'damaged'])->sum('q'),
                 'value' => round($value, 2),
@@ -251,9 +259,14 @@ class InventoryController extends Controller
     {
         $validated = $request->validate([
             'type'     => 'required|in:used,damaged,adjustment',
-            'quantity' => 'required|numeric|min:0.01',
-            'notes'    => 'nullable|string',
-        ]);
+            'quantity' => 'required|numeric|min:0.01|max:999999',
+            'notes'    => 'nullable|string|max:500|required_if:type,damaged',
+        ], ['notes.required_if' => 'Write the reason for the damage (e.g., broken or spoiled).']);
+
+        if ($validated['type'] !== 'adjustment' && (float) $validated['quantity'] > (float) $inventory->quantity_on_hand) {
+            return back()->with('error', 'Only ' . rtrim(rtrim(number_format((float) $inventory->quantity_on_hand, 2), '0'), '.')
+                . ' ' . $inventory->unit . ' of ' . $inventory->item_name . ' is on hand.');
+        }
 
         if ($validated['type'] === 'used') {
             $inventory->decrement('quantity_on_hand', $validated['quantity']);
@@ -272,6 +285,10 @@ class InventoryController extends Controller
             'user_id'      => auth()->id(),
         ]);
 
+        if ($validated['type'] === 'damaged') {
+            return back()->with('success', 'Recorded ' . rtrim(rtrim(number_format((float) $validated['quantity'], 2), '0'), '.') . ' '
+                . $inventory->unit . ' of ' . $inventory->item_name . ' as damaged.');
+        }
         return back()->with('success', 'Inventory adjusted successfully.');
     }
 
