@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Product;
 use App\Models\Sale;
+use App\Models\Setting;
 use App\Models\SalePayment;
 use App\Models\DayClosure;
 use App\Models\Site;
@@ -30,7 +31,9 @@ class PosController extends Controller
             ->limit(8)
             ->get();
 
-        return view('pos.index', compact('products', 'recent'));
+        $completed = session('completedSale') ? Sale::with('payments')->find(session('completedSale')) : null;
+
+        return view('pos.index', compact('products', 'recent', 'completed'));
     }
 
     public function store(Request $request)
@@ -129,7 +132,8 @@ class PosController extends Controller
         }
 
         return redirect()->route('pos.index')
-            ->with('success', 'Sale ' . $sale->sale_number . ' recorded. Total: ' . number_format($sale->total, 2) . '.');
+            ->with('success', 'Sale ' . $sale->sale_number . ' recorded. Total: ' . number_format($sale->total, 2) . '.')
+            ->with('completedSale', $sale->id);
     }
 
     public function void(Request $request, Sale $sale)
@@ -165,5 +169,30 @@ class PosController extends Controller
         });
 
         return back()->with('success', 'Sale ' . $sale->sale_number . ' voided and stock restored.');
+    }
+
+    /**
+     * Customer slip for the thermal printer (Epson EU-m30, 80 mm or 58 mm roll).
+     * ?reprint=1 marks the slip as a reprint; the page prints itself when ?print=1.
+     */
+    public function receipt(Request $request, Sale $sale)
+    {
+        $sale->load(['items', 'payments', 'cashier']);
+        $paid = round((float) $sale->payments->sum('amount'), 2);
+
+        return view('pos.receipt', [
+            'sale'    => $sale,
+            'paid'    => $paid,
+            'change'  => max(0, round($paid - (float) $sale->total, 2)),
+            'width'   => Setting::get('receipt_width', '80') === '58' ? 58 : 80,
+            'reprint' => $request->boolean('reprint'),
+            'autoPrint' => $request->boolean('print'),
+            'shop'    => [
+                'name'    => Setting::get('shop_name', 'Trove - Food & Cake Shop'),
+                'address' => Setting::get('shop_address', ''),
+                'contact' => Setting::get('shop_contact', ''),
+                'footer'  => Setting::get('receipt_footer', 'Thank you! Come again.'),
+            ],
+        ]);
     }
 }

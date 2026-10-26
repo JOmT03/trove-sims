@@ -151,6 +151,7 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/pos', [\App\Http\Controllers\PosController::class, 'index'])->name('pos.index');
     Route::post('/pos/sales', [\App\Http\Controllers\PosController::class, 'store'])->name('pos.sales.store');
     Route::post('/pos/sales/{sale}/void', [\App\Http\Controllers\PosController::class, 'void'])->name('pos.sales.void');
+    Route::get('/pos/sales/{sale}/receipt', [\App\Http\Controllers\PosController::class, 'receipt'])->name('pos.sales.receipt');
 });
 // ---- Inventory FIFO valuation (cost data: Owner/Manager only) ----
 Route::middleware(['auth', 'admin'])->group(function () {

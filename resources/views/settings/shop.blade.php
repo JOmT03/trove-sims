@@ -29,6 +29,18 @@ textarea{min-height:150px;resize:vertical;line-height:1.6;}
     </div>
 
     <div class="ss-card">
+      <h3>POS receipt printer</h3>
+      <div class="fg"><label>Paper width</label>
+        <select name="receipt_width">
+          <option value="80" @selected(old('receipt_width', $receiptWidth) == '80')>80 mm thermal roll (standard)</option>
+          <option value="58" @selected(old('receipt_width', $receiptWidth) == '58')>58 mm thermal roll (narrow)</option>
+        </select>
+        <div class="hint">Match the roll loaded in the Epson EU-m30. In the print window, choose the Epson printer and set margins to None.</div>
+      </div>
+      <div class="fg"><label>Message at the bottom of the slip</label><input type="text" name="receipt_footer" maxlength="120" value="{{ old('receipt_footer', $receiptFooter) }}" placeholder="e.g. Thank you! Come again."></div>
+    </div>
+
+    <div class="ss-card">
       <h3>Terms &amp; Conditions</h3>
       <div class="fg">
         <label>Printed on every order receipt</label>

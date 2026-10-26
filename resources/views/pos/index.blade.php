@@ -64,8 +64,19 @@
 .btn-primary:disabled{opacity:.45;cursor:not-allowed;}
 .recent{margin-top:14px;font-size:11.5px;color:var(--muted);}
 .recent .rh{text-transform:uppercase;letter-spacing:.5px;font-weight:700;margin-bottom:6px;}
-.recent .rr{display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px dashed var(--border);}
-.recent .rr.void{text-decoration:line-through;opacity:.6;}
+.recent .rr{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:4px 0;border-bottom:1px dashed var(--border);}
+.recent .rr .rn{flex:1;min-width:0;}
+.recent .rr.void .rn,.recent .rr.void .ra{text-decoration:line-through;opacity:.6;}
+.rprint{border:1px solid var(--border);background:var(--white);color:var(--muted);border-radius:7px;width:26px;height:24px;display:grid;place-items:center;cursor:pointer;padding:0;flex:none;}
+.rprint:hover{color:var(--gold);border-color:var(--gold);}
+.rprint svg{width:13px;height:13px;}
+.done-ic{width:40px;height:40px;border-radius:50%;background:#E7F3EA;color:#15803D;display:grid;place-items:center;flex:none;}
+.done-ic svg{width:20px;height:20px;}
+.done-sum{display:grid;grid-template-columns:repeat(3,1fr);border:1px solid var(--border);border-radius:12px;overflow:hidden;}
+.done-sum div{padding:10px 6px;text-align:center;border-left:1px solid var(--border);}
+.done-sum div:first-child{border-left:0;}
+.done-sum small{display:block;font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);font-weight:700;}
+.done-sum b{font-variant-numeric:tabular-nums;font-size:15px;}
 
 .modal-bg{display:none;position:fixed;inset:0;background:rgba(46,28,16,.5);z-index:60;align-items:center;justify-content:center;padding:16px;}
 .modal-bg.show{display:flex;}
@@ -161,8 +172,9 @@
       <div class="rh">Recent sales</div>
       @foreach($recent as $r)
         <div class="rr {{ $r->status === 'voided' ? 'void' : '' }}">
-          <span>{{ $r->sale_number }}</span>
-          <span>&#8369;{{ number_format($r->total, 2) }}</span>
+          <span class="rn">{{ $r->sale_number }}</span>
+          <span class="ra">&#8369;{{ number_format($r->total, 2) }}</span>
+          <button type="button" class="rprint" title="Print receipt" aria-label="Print receipt for {{ $r->sale_number }}" onclick="posPrint('{{ route('pos.sales.receipt', $r) }}?reprint=1')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 9V3h12v6M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2M6 14h12v7H6z"/></svg></button>
         </div>
       @endforeach
     </div>
@@ -213,7 +225,39 @@
   </div>
 </div>
 
+@if($completed)
+@php $cPaid = (float) $completed->payments->sum('amount'); $cOnline = $completed->payments->firstWhere('method', '!=', 'cash'); @endphp
+<!-- Sale complete -->
+<div class="modal-bg show" id="doneBg">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="doneTitle">
+    <div style="display:flex;gap:12px;align-items:center;padding:18px 20px;border-bottom:1px solid var(--border);">
+      <div class="done-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><path d="M5 12.5l4.5 4.5L19 7.5" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+      <div><h3 id="doneTitle" style="padding:0;border:0;">Sale complete</h3><div style="font-size:12.5px;color:var(--muted);">{{ $completed->sale_number }} &middot; {{ $completed->completed_at->format('M d, Y g:i A') }}</div></div>
+    </div>
+    <div class="modal-body">
+      <div class="done-sum">
+        <div><small>Total</small><b>&#8369;{{ number_format($completed->total, 2) }}</b></div>
+        <div><small>Paid</small><b>&#8369;{{ number_format($cPaid, 2) }}</b></div>
+        <div><small>Change</small><b>&#8369;{{ number_format(max(0, $cPaid - (float) $completed->total), 2) }}</b></div>
+      </div>
+      @if($cOnline)<div style="font-size:12.5px;color:var(--muted);margin-top:10px;">{{ strtoupper($cOnline->method) }} ref. {{ $cOnline->reference }}</div>@endif
+    </div>
+    <div class="mfoot">
+      <button type="button" class="btn-ghost" onclick="document.getElementById('doneBg').classList.remove('show')">New sale</button>
+      <button type="button" class="btn-primary" id="donePrint" onclick="posPrint('{{ route('pos.sales.receipt', $completed) }}')">Print receipt</button>
+    </div>
+  </div>
+</div>
+@endif
+<iframe id="rcptFrame" title="Receipt" style="position:absolute;width:0;height:0;border:0;visibility:hidden;"></iframe>
+
 <script>
+/* Print a receipt through a hidden frame; the receipt page opens the print window itself. */
+function posPrint(url){
+  document.getElementById("rcptFrame").src = url + (url.indexOf("?") < 0 ? "?" : "&") + "print=1&t=" + Date.now();
+}
+document.addEventListener("keydown", function(e){ if (e.key === "Escape"){ var d = document.getElementById("doneBg"); if (d) d.classList.remove("show"); } });
+
 const cart = new Map(); // id -> {id,name,price,stock,qty}
 var posCurCat = "";
 

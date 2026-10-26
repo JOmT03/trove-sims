@@ -21,6 +21,8 @@ class ShopSettingsController extends Controller
             'shopAddress' => Setting::get('shop_address', ''),
             'shopContact' => Setting::get('shop_contact', ''),
             'orderTerms'  => Setting::get('order_terms', self::DEFAULT_TERMS),
+            'receiptWidth'  => Setting::get('receipt_width', '80'),
+            'receiptFooter' => Setting::get('receipt_footer', 'Thank you! Come again.'),
         ]);
     }
 
@@ -31,6 +33,8 @@ class ShopSettingsController extends Controller
             'shop_address' => 'nullable|string|max:255',
             'shop_contact' => 'nullable|string|max:255',
             'order_terms'  => 'nullable|string|max:5000',
+            'receipt_width'  => 'nullable|in:80,58',
+            'receipt_footer' => 'nullable|string|max:120',
         ]);
         foreach ($data as $k => $v) {
             Setting::set($k, $v ?? '');
