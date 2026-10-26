@@ -7,7 +7,7 @@ use Illuminate\Http\Request;
 
 /**
  * Production Capacity. Reads each product's recipe (product_raw_materials:
- * quantity_needed per unit) against current raw-material stock, and shows how
+ * quantity_used per unit) against current raw-material stock, and shows how
  * many units of each product can still be produced right now, plus the
  * ingredient that runs out first (the limiting ingredient). This lets the user
  * see producible output straight from inventory, instead of recording a batch
@@ -41,7 +41,7 @@ class ProductionCapacityController extends Controller
             $recipe   = [];
 
             foreach ($materials as $m) {
-                $needed    = (float) $m->pivot->quantity_needed;
+                $needed    = (float) ($m->pivot->quantity_used ?: $m->pivot->quantity_needed);
                 $available = (float) $m->quantity_on_hand; // damaged units are already out of on-hand
                 if ($available < 0) {
                     $available = 0.0;

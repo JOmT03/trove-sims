@@ -32,7 +32,7 @@ class Product extends Model
     public function materials()
     {
        return $this->belongsToMany(Inventory::class, 'product_raw_materials')
-            ->withPivot('quantity_needed') // Uses quantity_needed from product_raw_materials
+            ->withPivot('quantity_used', 'quantity_needed') // recipe amount per unit is quantity_used
             ->withTimestamps();
     }
 

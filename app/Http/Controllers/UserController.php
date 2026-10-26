@@ -10,7 +10,7 @@ class UserController extends Controller
 {
     public function index()
     {
-        $users = User::orderByRaw("FIELD(role,'Owner','Manager','Staff')")
+        $users = User::orderByRaw("CASE role WHEN 'Owner' THEN 0 WHEN 'Manager' THEN 1 ELSE 2 END")
                       ->orderBy('first_name')->orderBy('last_name')->get();
         return view('users.index', compact('users'));
     }
